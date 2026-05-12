@@ -4937,6 +4937,37 @@ For Nx, plan the phase progression UPFRONT instead of discovering it. Author pat
 18. **Authoring family-template content as the default** — see D.5.2. Always pattern-instance from day one.
 19. **Forgetting to update CONTENT-LICENSE.md when adding third-party engines/voices** — see D.1.5. Each VOICEVOX character is a separate attribution.
 20. **Halting on prompts that have already-completed work** — see D.7. The /loop or scheduled-wakeup may fire after the work is done; verify state FIRST before re-doing anything.
+21. **Trusting JA-13 leaf-skip to mean "anything goes" in `explanation_en`** — see D.9.21 below. The skip exists because the field is nominally English commentary, but the corpus convention is N5-kanji-only in pedagogical glosses. Phase 7 polish (v1.15.1) embedded 4 above-N5 kanji (好/嫌/広/方) into 3 `explanation_en` fields; CI passed because the field is leaf-skipped from JA-13. Caught only by manual review. Mitigation shipped as JA-66 (2026-05-13) — programmatic check for above-N5 kanji in `explanation_en` + `public_domain_refs.pattern_role` (the two surfaces nominally English).
+
+### D.9.21 Anti-pattern #21: assuming leaf-skipped fields are content-anything-goes
+
+When you add a new "English commentary" field to the schema and exempt it from the kanji-scope checker via `SKIP_FIELDS` (leaf-skip), you create a silent gap: any kanji typed into that field is uncontrolled. For most fields this is fine — the kanji belong there (e.g., `examples[].ja`, `common_mistakes[].right`, `public_domain_refs[].context`). For *prose commentary* fields it is not — the corpus convention is to gloss Japanese words in kana when the kanji is above the target level, even inside English text.
+
+**Symptoms before you catch it:**
+- A `phase-N polish` batch upgrades short entries with worked Japanese examples.
+- The maintainer writes the examples in kanji because "that's how natives write them."
+- CI passes (the field is leaf-skipped from JA-13). The drift ships.
+- A reviewer eyeballing the page asks "are these N5 or N4?" because they spotted unfamiliar kanji.
+
+**The fix pattern (corpus-wide, ~30 LoC):**
+1. List every field that is leaf-skipped from your master kanji-scope check (`explanation_en`, `pattern_role`, `gloss`, `translation_en`, etc.).
+2. For each, decide: is this field allowed to contain *any* kanji, or only target-level kanji + kana?
+3. For the "target-level only" subset, write a paired check (`JA-66` in N5's case) that asserts every kanji in those fields is on the target whitelist.
+4. Run the new check across the corpus to identify pre-existing drift (you will find some — N5 found 4 above-N5 kanji and 8 in `pattern_role` from the same Phase 7 batch).
+5. Fix the drift, then lock the rule in CI.
+
+**Worked example from N5 (commit `3071c37`):**
+- Phase 7 introduced: 大好き / 大嫌い in n5-099, 広いね in n5-179, 読み方/書き方/食べ方 in n5-180.
+- Fixed to: だいすき / だいきらい, ひろいね, 読みかた / 書きかた / 食べかた (keeping the N5-list verb kanji 読/書/食; kana-only for above-N5 方).
+- Also fixed 3 `pattern_role` entries (n5-079, n5-085, n5-145) that had embedded 無鉄砲 / 角窮屈 / 思う — these are *English* commentary fields and should not contain Japanese at all; rewrote with romaji (mutekkappou, omou) and grammatical-term English.
+- JA-66 check added the same day (lambda invariant; ~50 LoC including docstring).
+
+**Generalization for N4 / N3 / etc:**
+- Each level has its own kanji whitelist (`data/n4_kanji_whitelist.json`, etc.).
+- Port JA-66 by parameterizing the whitelist path; the check logic is identical.
+- The "English commentary fields" set is corpus-wide constant: `explanation_en`, `pattern_role`, `gloss`, `translation_en`, `rationale`. Audit all five for above-target-level kanji on Day 1 of the new level.
+
+**Process lesson:** "CI green" is not the same as "convention green." Whenever you add a new content field, ask: *what other unspoken conventions apply to this field that the existing checks don't enforce?* Then write the missing checks before authoring content into the field — not after a maintainer asks "is this N5 level?".
 
 ## D.10 What this appendix does NOT cover
 
