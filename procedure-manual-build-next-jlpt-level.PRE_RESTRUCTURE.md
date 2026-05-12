@@ -1,105 +1,5 @@
 # Procedure Manual — Building the Next JLPT Level App
 
-**Source project:** JLPT N5 Tutor (this repo)  
-**Target audience:** any future JLPT level app (N4, N3, N2, N1) using the same architecture  
-**Prepared:** 2026-05-01 from accumulated N5 build experience (Phases 1-5 + Passes 1-19)  
-**Restructured:** 2026-05-13 into 5 chapters (Foundation / Safety Nets / Content / Interface / Review) for readability  
-**Status:** Living document — update as each next-level build adds new lessons
-
-This manual is written prescriptively. Where N5 hit a problem, the manual tells the next level how to avoid it. Generic best-practice advice has been omitted; only N5-specific learnings are included.
-
----
-
-## Table of Contents
-
-- **Chapter 1: Foundation**
-  - 0.A One-instruction autonomous-build contract
-  - ⚠ Operating modes — read this first
-  - 0. Scope of "next level"
-  - 1. Day 0 — Repo bootstrap (1-2 hours)
-  - 11. Migration considerations from level <P> to level <L>
-  - 13. Estimated total effort
-- **Chapter 2: Safety Nets**
-  - 2. Phase 1 — Foundation (week 1)
-  - 6. Phase 5 — Quality gates (continuous)
-  - 7. Tooling that paid off — port these scripts
-- **Chapter 3: Content**
-  - 3. Phase 2 — Content authoring strategy (weeks 2-8)
-  - 10. N5-specific wins to keep
-  - §20 Vocab.json structural rules + dedup tooling pattern (added 2026-05-09)
-- **Chapter 4: Interface**
-  - 4. Phase 3 — UI / Front-end (weeks 4-9, parallel with content)
-- **Chapter 5: Review**
-  - 5. Phase 4 — Audit cadence (continuous, weeks 6+)
-  - 8. Process discipline
-  - 9. External-blocked items — anticipate up front
-  - 12. What we learned about working with Claude Code
-  - 14. Anti-patterns from N5 — the bumper-sticker list
-  - 15. Open questions / decisions to make for N<L>
-  - 16. References
-  - 17. Appendix A — One-Shot Mode supplements
-  - 18. Pass-20 review findings — disposition
-  - §19 Native-teacher audit playbook (added 2026-05-09)
-- **Appendices**
-  - §B Appendix B — Schemas & rules extracted from N5 (merged 2026-05-04)
-  - Procedure Manual Appendix B — Extracted from N5 Codebase
-  - B.1 Vocab-ID slug derivation rule (closes F-20.20, P0)
-  - B.2 Audio manifest schema (closes F-20.18, P0)
-  - B.3 JSON schemas for data/*.json (closes F-20.16)
-  - B.4 i18n locale-file format (closes F-20.19)
-  - B.5 Front-end test framework + Playwright config (closes F-20.23)
-  - B.6 UI module list with descriptions (closes F-20.22)
-  - B.7 KB markdown grammar / BNF (closes F-20.15)
-  - B.8 Invariant rule specifications (closes F-20.17)
-  - B.9 Diagnostic Summary algorithm (closes F-20.24)
-  - B.10 Kanji-tier vs grammar-tier interaction (closes F-20.21, F-20.25)
-  - B.11 External-corpus URL list per level (closes F-20.26)
-  - B.12 Content-inventory extraction recipes (acknowledges F-20.12, F-20.13, F-20.14)
-  - B.13 What this appendix does NOT cover
-  - §C Appendix C — Pass-22 polish specifications (merged 2026-05-04)
-  - Procedure Manual Appendix C — Pass-22 Polish Specifications
-  - C.1 Distractor explanation rubric (closes F-22.1)
-  - C.2 Ko-so-a-do scene-context formatting standard (closes F-22.2)
-  - C.3 JA-2 / JA-23 invariant interaction (closes F-22.3)
-  - C.4 Augmented-set escape-valve guard (closes F-22.4)
-  - C.5 Auto-generation stop-condition formalization (closes F-22.6)
-  - C.6 PWA spec extraction (closes F-22.8)
-  - C.7 Same-pattern-string conflict resolution rule (closes F-22.9)
-  - C.8 Cross-references
-  - §D TASKS.md canonical template (merged 2026-05-04)
-  - TASKS.md — Canonical Template
-  - Appendix C — Session learnings 2026-05-10/11 (UI-audit + content-enrichment cycle)
-  - C.1 The orphan-data defect class — the single biggest lesson
-  - C.2 The minified-vs-unminified file pair gotcha
-  - C.3 Cache busting on `index.html`
-  - C.4 New schema patterns established in this session
-  - C.5 CI invariant `JA-13` (out-of-scope kanji) and `SKIP_SUBTREE_FIELDS`
-  - C.6 Localization parity — the chrome gap
-  - C.7 Audio pipeline — manifest is the source of truth
-  - C.8 The "dialogue" free-tag bug
-  - C.9 Empty `form` field on kanji examples — a content-authoring trap
-  - C.10 Pattern title quality — no placeholder labels
-  - C.11 Commit workflow for Claude Code Desktop
-  - C.12 Backup-file protection policy
-  - C.13 Quality bars for Nx — minimum coverage targets
-  - C.14 The order-of-operations for Nx (revised based on this cycle)
-  - C.15 Anti-patterns from this session (bumper-sticker list)
-  - C.16 What this appendix does NOT cover
-  - Appendix D — 2026-05-12 / 2026-05-13 Audit Cycle Learnings
-  - D.1 Audio engine canonicalization — VOICEVOX over gtts
-  - D.2 Synthetic ambient context audio — ffmpeg-only, no third-party assets
-  - D.3 Section-10 anti-items — CI enforcement pattern
-  - D.4 Anti-item escalation — Defer → Avoid for legal-risk items
-  - D.5 Provenance honesty discipline — phases 1 → 2 → 3 → 4 → 5
-  - D.6 Backup discipline — versioned + gitignored for large rendered assets
-  - D.7 Audit-prompt drift handling
-  - D.8 Quality-gate progression by phase
-  - D.9 Anti-patterns from this session (bumper-sticker list)
-  - D.10 What this appendix does NOT cover
-
----
-
-
 **Source project:** JLPT N5 Tutor (this repo)
 **Target audience:** any future JLPT level app (N4, N3, N2, N1) using the same architecture
 **Prepared:** 2026-05-01 from accumulated N5 build experience (Phases 1-5 + Passes 1-19)
@@ -123,14 +23,6 @@ The §0 scope table below shows the actual size deltas at each level transition;
 When the manual references "the source level" or "the source repo", it always means N5 (this repo) unless an explicit `<P>` token is used.
 
 ---
-
-
-
----
-
-# Chapter 1: Foundation
-
-> **Foundation** — start by copying what already works from the previous level. Decide ground rules (scope, schema, permissions, level-to-level migration) before any content is authored. Time-budget the build.
 
 ## 0.A One-instruction autonomous-build contract
 
@@ -200,7 +92,6 @@ If skip-permissions is not active and the agent's runtime keeps prompting, the b
 
 ---
 
-
 ## ⚠ Operating modes — read this first
 
 This document supports **two execution modes**. The bulk of the manual (§§0–16) was written for **Mode A**. **Appendix A (§17+)** carries the supplements required for **Mode B**.
@@ -227,7 +118,6 @@ Together, Appendices A + B + C close 36 of 40 Pass-20 issues plus 9 of the 10 Pa
 
 ---
 
-
 ## 0. Scope of "next level"
 
 The same playbook scales **N5 → N4 → N3 → N2 → N1**. Each level transition adds the deltas shown below. To use this manual, locate the row matching your target `<L>` and source `<P>` (typically `<P>=<L>+1`):
@@ -244,7 +134,6 @@ The same playbook scales **N5 → N4 → N3 → N2 → N1**. Each level transiti
 The **N5 → N4** transition is the smallest content jump but introduces the most architectural decisions (tier taxonomy, kanji-policy contention, borderline-grammar handling). For N3 and lower (`<L> ≤ 3`) it is mostly content scaling once those one-time architectural choices are committed.
 
 ---
-
 
 ## 1. Day 0 — Repo bootstrap (1-2 hours)
 
@@ -338,120 +227,6 @@ The N5 build wasted ~2 hours iterating on permission patterns because the bindin
 
 ---
 
-
-## 11. Migration considerations from level <P> to level <L>
-
-Beyond the obvious content scaling, three architectural decisions:
-
-### 11.1 Tier taxonomy
-
-At N5 we had `core_n5` and `late_n5` (borderline). At N<L>, plan for THREE tiers from day 1:
-- `core_n<L>` — solidly N<L> scope
-- `late_n<L>` — N<L> scope but only typically taught at end of N<L>
-- `n<L-1>_borderline` — appears in N<L> materials but is N<L-1> nuance
-
-JA-21 invariant enforces tier=late_n5 for late-N5 grammar in the N5 source content. At N<L>, the equivalent invariant should enforce tier=n<L-1>_borderline for level-`<L-1>` grammar that leaks into N<L> materials.
-
-### 11.2 Kanji policy escalation
-
-N5 has ~106 kanji in the whitelist, with strict scope enforcement. The next level adds more kanji per the §0 size table (e.g., N4 adds ~170 to take the whitelist to ~280; N3 adds ~370 more for ~650 total; etc.).
-
-**Decision to make on day 1:** does the N<L> app re-use N<P> kanji (yes — they're prerequisites) or only test the N<L>-additional set? Recommended: include all N5 ∪ ... ∪ N<L> in the whitelist and use the `tier` field on each kanji entry to distinguish prerequisite vs new (see §11.2 / Appendix B.10).
-
-### 11.3 Borderline grammar promotion
-
-Patterns like `んです` / `のです` (N5 borderline per F-15.23) become **core at the next level** (e.g., core_n4). The grammar.json migration:
-- Each former-borderline pattern at level N<P> becomes a core_n<L> pattern at the new level.
-- Existing examples from level N<P> get re-tagged as `prerequisite_n<P>`.
-- New questions can be authored at full N<L> scope.
-
-Plan ~30-40 such promotions. The N5 pattern catalog `late_n5` tier is your migration manifest — copy it, retag, expand.
-
-### 11.4 Level picker on a sibling deploy — clone-and-flip, do not clone-verbatim
-
-When the new level ships as a **sibling deploy** (separate origin or separate sub-path on the same origin — e.g., the N5 site at `<host>/jlpt-n5-tutor/` and the N4 site at `<host>/jlpt-n4-tutor/`), `js/levels.js` and `js/app.js` **must be rewritten, not copied**, in a specific way. Otherwise the level picker on the new deploy silently mis-routes clicks to the originating level's content.
-
-**The bug pattern to avoid (real example, 2026-05-04 N4 launch):** the N4 deploy shipped with `js/levels.js` left as a verbatim copy of the pre-launch N5 file. On the N4 origin, clicking the **N5 card** routed to `#/home` — but `#/home` resolves on whichever origin is currently loaded, so the user landed on the N4 dashboard instead of the N5 site. Simultaneously, the N4 card itself was rendered disabled (it had been `available: false` in the source state, before N4 was built). Visible symptom: *"click N5 → N4 syllabus opens, and N4 itself is disabled"* — confusing exactly because the user expects clicking the source-level card to leave the new site.
-
-**The fix is mechanical but easy to forget. For each next-level deploy, edit `js/levels.js` so:**
-
-| Card represents | `available` | `href` | `external` |
-|---|---|---|---|
-| The level THIS deploy serves (`<L>`) | `true` | `'#/home'` | (omit) |
-| Any other already-built level (`<P>` and any earlier levels with their own deploys) | `true` | `'<absolute sibling URL>'` | `true` |
-| Levels not yet built | `false` | `'#/n<X>'` (placeholder route) | (omit) |
-
-The render branch adds `rel="noopener" data-external="true"` only when `external: true`. Same-origin hash routes (`#/home`) deliberately stay free of those attrs so the SPA router handles them.
-
-**Three companion edits that go with the levels.js rewrite:**
-
-1. **`js/app.js` ROUTES dict** — remove `n<L>: renderLevelPlaceholder`. The local level is the home, not a placeholder. Leaving it registered means a stray `#/n<L>` link (e.g., a stale bookmark or test) renders the "Content not yet available" placeholder on the very site that ships that level.
-2. **`renderLevelPlaceholder` regex inside `levels.js`** — the source repo regex `^#\/(n[1-(<P>-1)])(?:$|\/)/i` must drop `<L>` from its character class (e.g., on the N4 deploy: `n[1-3]`, not `n[1-4]`). Same reason as #1.
-3. **Footer copy + header comment block + placeholder English text** all reference "this site currently ships N<P> only" — update to "ships N<L>" so a user who lands on a placeholder gets the right back-link target.
-
-**Cache invalidation is non-optional for this fix.** Bump `sw.js CACHE_VERSION` and `index.html ?v=` on the entry script (per §14 anti-pattern #18). A learner's browser may already have the broken levels.js cached from launch day.
-
-**Smoke test to add to §6.4 release gates** (catches the bug before deploy):
-
-```js
-// tests/level-picker-cross-deploy.spec.js (Playwright)
-// Run on EVERY built level deploy.
-test('level picker — local level uses #/home, others use external URLs', async ({ page }) => {
-  await page.goto('/#/levels');
-  const cards = await page.$$('.level-card.is-available');
-  let localCount = 0;
-  for (const card of cards) {
-    const href = await card.getAttribute('href');
-    const dataLevel = await card.getAttribute('data-level');
-    const isExternal = await card.getAttribute('data-external');
-    if (href === '#/home') {
-      localCount++;
-      expect(isExternal).toBeNull();  // local is NOT external
-    } else {
-      expect(href).toMatch(/^https?:\/\//);  // remote sibling
-      expect(isExternal).toBe('true');
-    }
-  }
-  expect(localCount).toBe(1);  // exactly one local-home card
-});
-```
-
-Run this test as a per-deploy smoke check. Failure means the levels.js was not rewritten when the deploy was forked from the source.
-
-**At the source repo** (this manual's repo, the level you're building FROM): the source's own levels.js needs a one-line update too — flip the new level's entry from `available: false` (placeholder) to `available: true` with the new sibling's absolute URL, `external: true`. Bump that repo's cache version. Without this, the source-repo learners can't navigate forward to the new deploy.
-
-In short: deploying level N<L> is **two** levels.js edits — one in the new repo (local-home for `<L>`, externals for everything else built), one in the source repo (flip `<L>` from disabled to external).
-
----
-
-
-## 13. Estimated total effort
-
-Based on N5 actuals:
-
-| Phase | Solo + AI | With native reviewer (parallel) |
-|-------|-----------|--------------------------------|
-| Bootstrap + foundation (1) | 1-2 weeks | same |
-| Content authoring (2-8) | 8-10 weeks | 6-8 weeks |
-| UI (parallel, 4-9) | 4-6 weeks | same |
-| Audit cycles (continuous, 6+) | 2-3 weeks | 2-3 weeks |
-| Polish + native review | 2-4 weeks | 1-2 weeks |
-| **Total** | **17-25 weeks** | **13-19 weeks** |
-
-The native reviewer parallelism only saves time if review windows are scheduled BEFORE 100% authoring (per §5.3). Otherwise the native reviewer is a sequential bottleneck.
-
-For N3+, multiply by ~1.5x per level due to vocab/kanji growth and reading-passage complexity.
-
----
-
-
-
----
-
-# Chapter 2: Safety Nets
-
-> **Safety nets** — set up automatic quality checks before writing any content. Build pipeline, CI invariants, integrity gates, and the tooling that catches regressions before they ship.
-
 ## 2. Phase 1 — Foundation (week 1)
 
 ### 2.1 Build pipeline first, content second
@@ -540,76 +315,6 @@ These were added piecewise in N5 (across X-6.1..X-6.9 and JA-1..JA-21). Pre-wire
 If contributors are on Japanese Windows: set `PYTHONIOENCODING=utf-8` before any script that prints Japanese, OR pipe through `Out-File -Encoding utf8` and read the file. N5 wasted hours on cp932 mojibake before this was standard. Document it in `MEMORY.md`.
 
 ---
-
-
-## 6. Phase 5 — Quality gates (continuous)
-
-### 6.1 Run the integrity check on every commit
-
-GitHub Actions workflow `.github/workflows/content-integrity.yml`:
-- Triggers: `push: [main]` + `pull_request: [main]` + `workflow_dispatch`
-- Runs `python tools/check_content_integrity.py -v`
-- Runs `python tools/test_build_data.py`
-- Hard fail on any violation. **Never `continue-on-error: true`.**
-
-If a fix introduces a violation, fix the data OR add the kanji/particle/construct to the appropriate augmented set in the integrity check tool with a comment explaining why it's legitimately in N<L> scope. Never silence by removing the check.
-
-### 6.2 Add new invariants when bugs recur
-
-The N5 invariants (X-6.x + JA-x) accumulated organically — each one was added after a real bug class was caught. When a bug repeats, write the invariant. Examples:
-- 38 stub questions across 9 passes → finally added stub-redirect-text invariant (`JA-10`)
-- Multi-correct ko-so-a-do bug → added context-presence regex
-- Synonym overclaim → grep regex for `irect synonym|directly equivalent`
-
-### 6.3 Status snapshot must reflect current state
-
-The first ~25 lines of TASKS.md are the canonical state-of-the-project. Update them on every significant change (corpus size, SW version, vocab/kanji counts, route list). N5 drifted multiple times and required catch-up commits to refresh.
-
-If your workflow runs scripts that change corpus size, add a post-script step that regenerates the snapshot's numeric fields (extract them from `_meta` blocks).
-
-### 6.4 Safe-script practices for JSON-mutating tooling
-
-When a script-driven pass mutates `data/*.json` (e.g., the dedup tool in §20, the romaji-patch tool, the homophone-retag tool), apply these guardrails. They were learned the hard way during the N5 audit pass.
-
-- **`json.dump(..., ensure_ascii=False)` can shift Unicode normalization.** A round-trip read → modify → write may serialize the same logical string with different byte sequences (NFC vs NFD; particularly noticeable in Devanagari, where consonant-cluster forms have multiple equivalent encodings). Re-run `tools/check_content_integrity.py` after every script-driven JSON modification — don't trust visual diff inspection alone. The N5 audit caught a JA-41 (Hindi prose) violation that disappeared after a `json.dump` round-trip purely because of normalization shift.
-- **Diff CI failure counts before/after via `git stash` to attribute violations.** Before touching a file, run integrity → record violation count C0. Make changes. Re-run integrity → record C1. If C1 > C0, your changes introduced violations. If C1 < C0, your changes happened to fix pre-existing violations (note this in the commit message). If C1 == C0, no net change — but verify the failing INVARIANTS are the same set (same C, different invariants = silent bug).
-- **Stash dance for clean baseline.** When integrity fails after your edits AND you suspect pre-existing failures: `git stash push -- <files>`, run integrity (records true baseline), `git stash pop`, run integrity (records your delta). The difference is what your changes did.
-- **`--verbose` mode finds non-obvious violations.** Plain `python tools/check_content_integrity.py` summarizes pass/fail counts. `python tools/check_content_integrity.py --verbose` (or `-v`) emits the specific failing IDs and contexts. Use verbose mode in CI; use plain mode only for quick local-loop confirmation.
-- **Bump `CACHE_VERSION` after every data-content commit.** `sw.js` carries `const CACHE_VERSION = 'jlpt-n<L>-tutor-vMM.mm.pp'` — bump the patch number after any commit that touches `data/`. Without it, deployed clients keep serving stale cached JSON until the next stale-while-revalidate cycle (could be days). Pair: refresh `data/version.json` via `tools/build_version_json.py` so the runtime footer reflects the new state.
-- **Backup commits before mass-mutation passes.** Before running a script that touches >50 entries (dedup, romaji-patch, audio re-render), commit the current state as `chore(backup): pre-<pass-name> checkpoint`. Recovery is trivial; `git reset` is destructive; backup commits are cheap.
-- **One pass per commit.** Don't bundle three independent passes (dedup + romaji + provenance flip) into one commit. CI failure attribution becomes a archaeology project. Atomic per-pass commits make `git bisect` work and make reverting one pass without losing the others trivial.
-
----
-
-
-## 7. Tooling that paid off — port these scripts
-
-In rough priority order:
-
-1. **`tools/build_data.py`** — KB markdown → JSON. The single most important script. Port + adapt.
-2. **`tools/check_content_integrity.py`** — all invariants. Port the framework + the X-6.x ones; add JA-x as you author content.
-3. **`tools/test_build_data.py`** — regression tests for the build pipeline. Port the structure; write new tests as N<L>-specific bugs surface.
-4. **`tools/link_grammar_examples_to_vocab.py`** — homograph-aware vocab linking. Has a sophisticated boundary-check + HOMOGRAPH_RULES system. Port verbatim and extend the rules as new homograph clusters appear at the next level (at N4: 込 readings; at N3: 形 / 化 readings; etc.).
-5. **`tools/scan_multi_correct.py`** — 5-category multi-correct candidate scanner. Wire as advisory CI gate.
-6. **`tools/heuristic_audit.py`** — cheap mass-scan with deterministic findings (precision ~75% per N5 Pass-15a). Use for first-pass triage.
-7. **`tools/llm_audit.py`** — Claude API for deep semantic review. Production-ready in N5; just update prompt template for N<L> scope.
-8. **`tools/build_audio.py`** — TTS pipeline. Idempotent. Port + add native-recording skip-flag for N<L>.
-9. **`tools/tag_vocab_pos.py`** — POS tagging for vocab. Adapt rules.
-10. **`tools/coverage_compare.py`** — external-corpus gap analysis. Port + update for N<L> corpus.
-
-Skip these (one-shot diagnostics from N5):
-- `_inspect_*.py`, `_check_*.py`, `_dup_*.py` — N5-specific debugging.
-- `fix_kosoado_basic.py`, `fix_particle_basic.py`, `fix_pass15_tier2.py` — one-shot Pass-15 fix appliers; useful as audit-trail in N5 but not as code to port.
-
----
-
-
-
----
-
-# Chapter 3: Content
-
-> **Content** — write the lessons: grammar, vocabulary, kanji, reading, listening. KB-first markdown → derive JSON. Apply the anti-patterns at §3.2.x to avoid repeating N5 mistakes.
 
 ## 3. Phase 2 — Content authoring strategy (weeks 2-8)
 
@@ -1230,222 +935,6 @@ N5 extracted 175 questions across 17 tests in ~30 minutes via WebFetch. Saved as
 
 ---
 
-
-## 10. N5-specific wins to keep
-
-These are the things that genuinely worked and should carry forward verbatim:
-
-- **Zen Modern (Muji-inspired) design system** — hairlines not borders, no shadows, no gradients, weights 300/400/500 only. Source of truth at `specifications/jlpt-n5-design-system-zen-modern.md`. Port the spec, replace level references.
-- **5-locale i18n shell** (en/vi/id/ne/zh) — the en at v1 + others structured pattern works.
-- **Hash-based routing** (`#/learn/...`) — no server, full PWA.
-- **Self-hosted fonts** — Inter (300/400/500) + Noto Sans JP 400 subset to N5 kanji range. ~500KB total. Replace subset with N<L> kanji range for the next-level build (the union of N5 + ... + N<L> per §11.2).
-- **Diagnostic Summary** with error patterns + recommended next session + session log.
-- **SM-2 SRS** with 4-button grading (Again/Hard/Good/Easy) and verified reps (rep 1→1d, rep 2→6d, rep 3→15d, lapse → 1d + EF drops).
-- **Export/import** for cross-device portability without telemetry.
-- **No telemetry** as a hard constraint. Privacy-first. Don't break this.
-- **Em-dash-free codebase** — strip them all (881 in N5). They break round-trips.
-- **Browser-runnable test suite** (37 tests in N5) — JS + Playwright smoke tests. CI gate.
-
----
-
-
-# §20 Vocab.json structural rules + dedup tooling pattern (added 2026-05-09)
-
-The N5 corpus shipped with **41 (form, reading) cross-listing duplicates** in `data/vocab.json` (e.g., `へや` listed in both §13-Locations AND §26-House-and-Furniture as separate entries with the same gloss). Each cross-listing then caused 1+ same-reading **double-tags** in `data/grammar.json` examples — 164 cases total — because the auto-tagger from §3.2.13 tagged BOTH IDs whenever the word appeared. Net effect: a learner clicking through the same word from different examples might see two different vocab cards, or see the same card twice with no indication of canonicality.
-
-The N5 dedup pass (commits `0058f08` + `884a63f`, 2026-05-08) closed this. This section documents the rules and the tooling so N`<L>` doesn't accumulate the same debt.
-
-## §20.1 Structural rules (apply on day 1 of vocab authoring)
-
-1. **One canonical entry per `(form, reading)` tuple unless legitimate polyseme.** Polyseme = different glosses (e.g., `は` = tooth/leaf/topic-particle). Distinguish polysemes via the `.2` / `.3` suffix on the ID, AND the gloss MUST explicitly disambiguate (e.g., `あつい` → §31.あつい "hot weather (暑い)", §31.あつい.2 "hot to touch (熱い)", §31.あつい.3 "thick (厚い)").
-
-2. **Cross-listings are SOURCE-MARKDOWN-ONLY redundancies.** In `KnowledgeBank/vocabulary_n<L>.md`, you may list `へや` under §13-Locations AND §26-House-and-Furniture for pedagogical coherence (the entry shows up in both thematic walks). But the build pipeline collapses these to a SINGLE canonical entry in `data/vocab.json`. The non-canonical (later-listed) appearance in MD is marked `(also in §X)` parenthetical in its gloss, so the build script knows which to drop.
-
-3. **Canonical-selection rule.** When two MD entries share `(form, reading)`:
-   - If exactly one has `(also in §X)` marker → that entry is the cross-listing; drop it; the other is canonical.
-   - If both unmarked but glosses normalize identically → prefer the lower-numbered section.
-   - If both unmarked and glosses differ → polyseme; keep both with `.2` disambiguator IDs and ensure glosses make the distinction explicit.
-
-4. **CI invariant `JA-42`** (see §2.2): no two `data/vocab.json` entries share `(form, reading)` AND have normalized-identical glosses unless one explicitly carries `(also in §X)`.
-
-5. **Polyseme allowlist for `.2` / `.3` IDs.** Document every polyseme cluster in a sidecar — the audit needs to know which (form, reading) duplicates are intentional. Recommended: extend `data/n<L>_kanji_whitelist.meta.json` (or a new `data/vocab_polysemes.json`) with a `polysemes: [{form, reading, senses: [...]}]` list.
-
-## §20.2 Dedup tooling recipe (when retrofitting an existing corpus)
-
-If a corpus already has cross-listing duplicates, the cleanup is mechanical. The N5 script lives at `not-required/tools-archive/dedup_vocab_2026_05_08.py` (in the source repo). Adapt it as follows:
-
-```python
-# Steps 1-2: identify dups + pick canonical
-import json, re
-from collections import defaultdict
-
-with open('data/vocab.json', 'r', encoding='utf-8') as f:
-    vocab_data = json.load(f)
-
-def conservative_normalize(g):
-    # Strip ONLY '(also in §X...)' markers; preserve disambiguating
-    # parentheticals like '(weather; separate adjective from touch)'.
-    g = re.sub(r'\s*\(also in[^)]*\)', '', g)
-    return g.lower().strip().rstrip(',.')
-
-def section_num(s):
-    m = re.match(r'^(\d+)\.', s)
-    return int(m.group(1)) if m else 999
-
-groups = defaultdict(list)
-for e in vocab_data['entries']:
-    key = (e.get('form',''), e.get('reading',''))
-    groups[key].append(e)
-
-# Build mapping: removed_id -> canonical_id
-mapping = {}
-merge_pairs = []
-for key, entries in groups.items():
-    if len(entries) < 2:
-        continue
-    # Group entries by normalized gloss
-    by_gloss = defaultdict(list)
-    for e in entries:
-        by_gloss[conservative_normalize(e.get('gloss',''))].append(e)
-    # Within each gloss-bucket, dedup
-    for norm_g, sub in by_gloss.items():
-        if len(sub) < 2:
-            continue
-        sub_sorted = sorted(sub, key=lambda e: (
-            1 if '(also in' in e.get('gloss','').lower() else 0,
-            section_num(e['section'])
-        ))
-        canonical = sub_sorted[0]
-        for removed in sub_sorted[1:]:
-            mapping[removed['id']] = canonical['id']
-            merge_pairs.append((canonical, removed))
-```
-
-```python
-# Step 3: merge unique data from removed into canonical
-def merge_data(canonical, removed):
-    # Merge unique examples (key = (ja, translation_en))
-    canon_examples = canonical.get('examples', [])
-    canon_keys = {(ex.get('ja',''), ex.get('translation_en','')) for ex in canon_examples}
-    for ex in removed.get('examples', []):
-        key = (ex.get('ja',''), ex.get('translation_en',''))
-        if key not in canon_keys:
-            canon_examples.append(ex)
-            canon_keys.add(key)
-    canonical['examples'] = canon_examples
-    # Take pitch_accent / notes from removed if canonical lacks
-    if 'pitch_accent' not in canonical and 'pitch_accent' in removed:
-        canonical['pitch_accent'] = removed['pitch_accent']
-    if not canonical.get('notes') and removed.get('notes'):
-        canonical['notes'] = removed['notes']
-
-for canonical, removed in merge_pairs:
-    merge_data(canonical, removed)
-```
-
-```python
-# Step 4: migrate references in grammar.json (and reading.json /
-# questions.json if applicable). Walk every JSON value; replace
-# any string that matches a removed ID with the canonical.
-def update_refs(obj, mapping):
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if isinstance(v, str) and v in mapping:
-                obj[k] = mapping[v]
-            elif isinstance(v, list):
-                for i, item in enumerate(v):
-                    if isinstance(item, str) and item in mapping:
-                        v[i] = mapping[item]
-                    else:
-                        update_refs(item, mapping)
-            else:
-                update_refs(v, mapping)
-    elif isinstance(obj, list):
-        for i, item in enumerate(obj):
-            if isinstance(item, str) and item in mapping:
-                obj[i] = mapping[item]
-            else:
-                update_refs(item, mapping)
-```
-
-```python
-# Step 5: dedup vocab_ids arrays where the mapping created collisions
-def dedup_vocab_id_arrays(obj):
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if k == 'vocab_ids' and isinstance(v, list):
-                seen = set(); deduped = []
-                for vid in v:
-                    if vid not in seen:
-                        seen.add(vid); deduped.append(vid)
-                obj[k] = deduped
-            else:
-                dedup_vocab_id_arrays(v)
-    elif isinstance(obj, list):
-        for item in obj:
-            dedup_vocab_id_arrays(item)
-```
-
-```python
-# Step 6: remove duplicate entries from vocab.json
-removed_ids = set(mapping.keys())
-vocab_data['entries'] = [e for e in vocab_data['entries']
-                         if e['id'] not in removed_ids]
-
-# Step 7: write back
-with open('data/vocab.json', 'w', encoding='utf-8') as f:
-    json.dump(vocab_data, f, ensure_ascii=False, indent=2)
-    f.write('\n')
-```
-
-## §20.3 Source-of-truth sync (KnowledgeBank parity)
-
-After the dedup pass touches `vocab.json`, JA-31 (vocab MD/JSON parity) will fail because `KnowledgeBank/vocabulary_n<L>.md` still contains the cross-listings as separate lines. Fix in lockstep:
-
-- Walk every line `- WORD - [POS] gloss` under section `## NN. Title`. If `(WORD, NN)` matches a `(removed_form, removed_section_num)` from the dedup mapping, delete that line.
-- **Watch for over-removal of non-cross-listing entries with the same form.** If section §30 has `いる - [v2] to exist` AND `いる - [v1] to need` (the 要る polyseme), naively matching by `(form, section)` removes BOTH. Match by `(form, section, gloss-startswith)` to preserve polysemes — OR match by the explicit `(also in §X)` marker since cross-listings carry that and polysemes don't.
-- Verify no X-6.6 / JA-31 regressions before committing the MD changes.
-
-## §20.4 Three-or-more entry groups need extra care
-
-Some `(form, reading)` groups have 3+ entries (e.g., `あつい` has 4 in N5: weather + adjective-weather + adjective-touch + adjective-thick). The dedup script must:
-
-1. Group by `(form, reading)`.
-2. Within each group, sub-group by **conservative-normalized gloss** (strip ONLY `(also in)` markers, NOT disambiguating parentheticals).
-3. Within each sub-group, dedup by canonical-selection rule.
-4. Polyseme entries (different normalized glosses) survive untouched.
-
-For N5: `あつい` weather (§14) and adjective-weather (§31.0) had identical normalized glosses → deduped to one. `あつい.2` (touch, 熱い) and `あつい.3` (thick, 厚い) had distinct normalized glosses → preserved.
-
-If your normalize_gloss function is too aggressive (strips disambiguating parentheticals), you'll collapse polysemes and lose the touch/thick senses. The N5 audit caught this regression early; the conservative normalization is the safe default.
-
-## §20.5 Verification after dedup
-
-- `python tools/check_content_integrity.py`: 50/50 (or current invariant count) green.
-- Sample dedup'd entries: pick 5 random `(form, reading)` cases; verify the canonical entry has all examples / metadata from the merged copy.
-- Spot-check `data/grammar.json`: for each example whose `vocab_ids` list shrunk, confirm the surviving tags resolve to existing vocab entries.
-- Bump `CACHE_VERSION` in `sw.js`; refresh `data/version.json`; commit + push.
-
-## §20.6 What this protects against in N`<L>` and beyond
-
-If `vocab.json` ships clean from day 1 (single canonical per (form, reading), `(also in §X)` markers used for MD cross-listings), the N`<L>` corpus avoids:
-
-- The 164-double-tag downstream pollution of grammar.json.
-- The ambiguity in vocab-detail page rendering ("which entry should I show when the user clicks `へや`?").
-- The KnowledgeBank-parity drift that JA-31 catches but only because it was authored to handle homograph polysemes via set-valued matching (a workaround for vocab dup that wouldn't be needed if dups didn't exist).
-
-The day-1 effort to set up the canonical-per-tuple rule is small. The retrofit cost (N5 paid this) is a multi-hour audit + dedup + MD-sync + ref-migration pass. Do it on day 1.
-
----
-
-
-
----
-
-# Chapter 4: Interface
-
-> **Interface** — build the app screens so learners can use the content. Vanilla static + PWA + audio pipeline + mobile contract + cache discipline.
-
 ## 4. Phase 3 — UI / Front-end (weeks 4-9, parallel with content)
 
 ### 4.1 Stay vanilla static
@@ -1563,14 +1052,6 @@ UI-feedback audit before each release — for every disabled-button + silent-act
 
 ---
 
-
-
----
-
-# Chapter 5: Review
-
-> **Review** — keep reviewing for errors; a native Japanese teacher gives final approval. Audits, process discipline, AI-assistant lessons, and the bumper-sticker anti-pattern list live here.
-
 ## 5. Phase 4 — Audit cadence (continuous, weeks 6+)
 
 ### 5.1 Pass-N protocol
@@ -1612,6 +1093,65 @@ Set up a cron / scheduled job that fires every 90 days to surface external-block
 
 ---
 
+## 6. Phase 5 — Quality gates (continuous)
+
+### 6.1 Run the integrity check on every commit
+
+GitHub Actions workflow `.github/workflows/content-integrity.yml`:
+- Triggers: `push: [main]` + `pull_request: [main]` + `workflow_dispatch`
+- Runs `python tools/check_content_integrity.py -v`
+- Runs `python tools/test_build_data.py`
+- Hard fail on any violation. **Never `continue-on-error: true`.**
+
+If a fix introduces a violation, fix the data OR add the kanji/particle/construct to the appropriate augmented set in the integrity check tool with a comment explaining why it's legitimately in N<L> scope. Never silence by removing the check.
+
+### 6.2 Add new invariants when bugs recur
+
+The N5 invariants (X-6.x + JA-x) accumulated organically — each one was added after a real bug class was caught. When a bug repeats, write the invariant. Examples:
+- 38 stub questions across 9 passes → finally added stub-redirect-text invariant (`JA-10`)
+- Multi-correct ko-so-a-do bug → added context-presence regex
+- Synonym overclaim → grep regex for `irect synonym|directly equivalent`
+
+### 6.3 Status snapshot must reflect current state
+
+The first ~25 lines of TASKS.md are the canonical state-of-the-project. Update them on every significant change (corpus size, SW version, vocab/kanji counts, route list). N5 drifted multiple times and required catch-up commits to refresh.
+
+If your workflow runs scripts that change corpus size, add a post-script step that regenerates the snapshot's numeric fields (extract them from `_meta` blocks).
+
+### 6.4 Safe-script practices for JSON-mutating tooling
+
+When a script-driven pass mutates `data/*.json` (e.g., the dedup tool in §20, the romaji-patch tool, the homophone-retag tool), apply these guardrails. They were learned the hard way during the N5 audit pass.
+
+- **`json.dump(..., ensure_ascii=False)` can shift Unicode normalization.** A round-trip read → modify → write may serialize the same logical string with different byte sequences (NFC vs NFD; particularly noticeable in Devanagari, where consonant-cluster forms have multiple equivalent encodings). Re-run `tools/check_content_integrity.py` after every script-driven JSON modification — don't trust visual diff inspection alone. The N5 audit caught a JA-41 (Hindi prose) violation that disappeared after a `json.dump` round-trip purely because of normalization shift.
+- **Diff CI failure counts before/after via `git stash` to attribute violations.** Before touching a file, run integrity → record violation count C0. Make changes. Re-run integrity → record C1. If C1 > C0, your changes introduced violations. If C1 < C0, your changes happened to fix pre-existing violations (note this in the commit message). If C1 == C0, no net change — but verify the failing INVARIANTS are the same set (same C, different invariants = silent bug).
+- **Stash dance for clean baseline.** When integrity fails after your edits AND you suspect pre-existing failures: `git stash push -- <files>`, run integrity (records true baseline), `git stash pop`, run integrity (records your delta). The difference is what your changes did.
+- **`--verbose` mode finds non-obvious violations.** Plain `python tools/check_content_integrity.py` summarizes pass/fail counts. `python tools/check_content_integrity.py --verbose` (or `-v`) emits the specific failing IDs and contexts. Use verbose mode in CI; use plain mode only for quick local-loop confirmation.
+- **Bump `CACHE_VERSION` after every data-content commit.** `sw.js` carries `const CACHE_VERSION = 'jlpt-n<L>-tutor-vMM.mm.pp'` — bump the patch number after any commit that touches `data/`. Without it, deployed clients keep serving stale cached JSON until the next stale-while-revalidate cycle (could be days). Pair: refresh `data/version.json` via `tools/build_version_json.py` so the runtime footer reflects the new state.
+- **Backup commits before mass-mutation passes.** Before running a script that touches >50 entries (dedup, romaji-patch, audio re-render), commit the current state as `chore(backup): pre-<pass-name> checkpoint`. Recovery is trivial; `git reset` is destructive; backup commits are cheap.
+- **One pass per commit.** Don't bundle three independent passes (dedup + romaji + provenance flip) into one commit. CI failure attribution becomes a archaeology project. Atomic per-pass commits make `git bisect` work and make reverting one pass without losing the others trivial.
+
+---
+
+## 7. Tooling that paid off — port these scripts
+
+In rough priority order:
+
+1. **`tools/build_data.py`** — KB markdown → JSON. The single most important script. Port + adapt.
+2. **`tools/check_content_integrity.py`** — all invariants. Port the framework + the X-6.x ones; add JA-x as you author content.
+3. **`tools/test_build_data.py`** — regression tests for the build pipeline. Port the structure; write new tests as N<L>-specific bugs surface.
+4. **`tools/link_grammar_examples_to_vocab.py`** — homograph-aware vocab linking. Has a sophisticated boundary-check + HOMOGRAPH_RULES system. Port verbatim and extend the rules as new homograph clusters appear at the next level (at N4: 込 readings; at N3: 形 / 化 readings; etc.).
+5. **`tools/scan_multi_correct.py`** — 5-category multi-correct candidate scanner. Wire as advisory CI gate.
+6. **`tools/heuristic_audit.py`** — cheap mass-scan with deterministic findings (precision ~75% per N5 Pass-15a). Use for first-pass triage.
+7. **`tools/llm_audit.py`** — Claude API for deep semantic review. Production-ready in N5; just update prompt template for N<L> scope.
+8. **`tools/build_audio.py`** — TTS pipeline. Idempotent. Port + add native-recording skip-flag for N<L>.
+9. **`tools/tag_vocab_pos.py`** — POS tagging for vocab. Adapt rules.
+10. **`tools/coverage_compare.py`** — external-corpus gap analysis. Port + update for N<L> corpus.
+
+Skip these (one-shot diagnostics from N5):
+- `_inspect_*.py`, `_check_*.py`, `_dup_*.py` — N5-specific debugging.
+- `fix_kosoado_basic.py`, `fix_particle_basic.py`, `fix_pass15_tier2.py` — one-shot Pass-15 fix appliers; useful as audit-trail in N5 but not as code to port.
+
+---
 
 ## 8. Process discipline
 
@@ -1654,7 +1194,6 @@ The next Claude session reads this on startup. Without it, every session re-disc
 
 ---
 
-
 ## 9. External-blocked items — anticipate up front
 
 N5 has 4 EB items, all foreseeable from the start. Plan for these in N<L>:
@@ -1668,6 +1207,107 @@ Register all 4 in TASKS.md `External-blocked backlog` from week 1 with explicit 
 
 ---
 
+## 10. N5-specific wins to keep
+
+These are the things that genuinely worked and should carry forward verbatim:
+
+- **Zen Modern (Muji-inspired) design system** — hairlines not borders, no shadows, no gradients, weights 300/400/500 only. Source of truth at `specifications/jlpt-n5-design-system-zen-modern.md`. Port the spec, replace level references.
+- **5-locale i18n shell** (en/vi/id/ne/zh) — the en at v1 + others structured pattern works.
+- **Hash-based routing** (`#/learn/...`) — no server, full PWA.
+- **Self-hosted fonts** — Inter (300/400/500) + Noto Sans JP 400 subset to N5 kanji range. ~500KB total. Replace subset with N<L> kanji range for the next-level build (the union of N5 + ... + N<L> per §11.2).
+- **Diagnostic Summary** with error patterns + recommended next session + session log.
+- **SM-2 SRS** with 4-button grading (Again/Hard/Good/Easy) and verified reps (rep 1→1d, rep 2→6d, rep 3→15d, lapse → 1d + EF drops).
+- **Export/import** for cross-device portability without telemetry.
+- **No telemetry** as a hard constraint. Privacy-first. Don't break this.
+- **Em-dash-free codebase** — strip them all (881 in N5). They break round-trips.
+- **Browser-runnable test suite** (37 tests in N5) — JS + Playwright smoke tests. CI gate.
+
+---
+
+## 11. Migration considerations from level <P> to level <L>
+
+Beyond the obvious content scaling, three architectural decisions:
+
+### 11.1 Tier taxonomy
+
+At N5 we had `core_n5` and `late_n5` (borderline). At N<L>, plan for THREE tiers from day 1:
+- `core_n<L>` — solidly N<L> scope
+- `late_n<L>` — N<L> scope but only typically taught at end of N<L>
+- `n<L-1>_borderline` — appears in N<L> materials but is N<L-1> nuance
+
+JA-21 invariant enforces tier=late_n5 for late-N5 grammar in the N5 source content. At N<L>, the equivalent invariant should enforce tier=n<L-1>_borderline for level-`<L-1>` grammar that leaks into N<L> materials.
+
+### 11.2 Kanji policy escalation
+
+N5 has ~106 kanji in the whitelist, with strict scope enforcement. The next level adds more kanji per the §0 size table (e.g., N4 adds ~170 to take the whitelist to ~280; N3 adds ~370 more for ~650 total; etc.).
+
+**Decision to make on day 1:** does the N<L> app re-use N<P> kanji (yes — they're prerequisites) or only test the N<L>-additional set? Recommended: include all N5 ∪ ... ∪ N<L> in the whitelist and use the `tier` field on each kanji entry to distinguish prerequisite vs new (see §11.2 / Appendix B.10).
+
+### 11.3 Borderline grammar promotion
+
+Patterns like `んです` / `のです` (N5 borderline per F-15.23) become **core at the next level** (e.g., core_n4). The grammar.json migration:
+- Each former-borderline pattern at level N<P> becomes a core_n<L> pattern at the new level.
+- Existing examples from level N<P> get re-tagged as `prerequisite_n<P>`.
+- New questions can be authored at full N<L> scope.
+
+Plan ~30-40 such promotions. The N5 pattern catalog `late_n5` tier is your migration manifest — copy it, retag, expand.
+
+### 11.4 Level picker on a sibling deploy — clone-and-flip, do not clone-verbatim
+
+When the new level ships as a **sibling deploy** (separate origin or separate sub-path on the same origin — e.g., the N5 site at `<host>/jlpt-n5-tutor/` and the N4 site at `<host>/jlpt-n4-tutor/`), `js/levels.js` and `js/app.js` **must be rewritten, not copied**, in a specific way. Otherwise the level picker on the new deploy silently mis-routes clicks to the originating level's content.
+
+**The bug pattern to avoid (real example, 2026-05-04 N4 launch):** the N4 deploy shipped with `js/levels.js` left as a verbatim copy of the pre-launch N5 file. On the N4 origin, clicking the **N5 card** routed to `#/home` — but `#/home` resolves on whichever origin is currently loaded, so the user landed on the N4 dashboard instead of the N5 site. Simultaneously, the N4 card itself was rendered disabled (it had been `available: false` in the source state, before N4 was built). Visible symptom: *"click N5 → N4 syllabus opens, and N4 itself is disabled"* — confusing exactly because the user expects clicking the source-level card to leave the new site.
+
+**The fix is mechanical but easy to forget. For each next-level deploy, edit `js/levels.js` so:**
+
+| Card represents | `available` | `href` | `external` |
+|---|---|---|---|
+| The level THIS deploy serves (`<L>`) | `true` | `'#/home'` | (omit) |
+| Any other already-built level (`<P>` and any earlier levels with their own deploys) | `true` | `'<absolute sibling URL>'` | `true` |
+| Levels not yet built | `false` | `'#/n<X>'` (placeholder route) | (omit) |
+
+The render branch adds `rel="noopener" data-external="true"` only when `external: true`. Same-origin hash routes (`#/home`) deliberately stay free of those attrs so the SPA router handles them.
+
+**Three companion edits that go with the levels.js rewrite:**
+
+1. **`js/app.js` ROUTES dict** — remove `n<L>: renderLevelPlaceholder`. The local level is the home, not a placeholder. Leaving it registered means a stray `#/n<L>` link (e.g., a stale bookmark or test) renders the "Content not yet available" placeholder on the very site that ships that level.
+2. **`renderLevelPlaceholder` regex inside `levels.js`** — the source repo regex `^#\/(n[1-(<P>-1)])(?:$|\/)/i` must drop `<L>` from its character class (e.g., on the N4 deploy: `n[1-3]`, not `n[1-4]`). Same reason as #1.
+3. **Footer copy + header comment block + placeholder English text** all reference "this site currently ships N<P> only" — update to "ships N<L>" so a user who lands on a placeholder gets the right back-link target.
+
+**Cache invalidation is non-optional for this fix.** Bump `sw.js CACHE_VERSION` and `index.html ?v=` on the entry script (per §14 anti-pattern #18). A learner's browser may already have the broken levels.js cached from launch day.
+
+**Smoke test to add to §6.4 release gates** (catches the bug before deploy):
+
+```js
+// tests/level-picker-cross-deploy.spec.js (Playwright)
+// Run on EVERY built level deploy.
+test('level picker — local level uses #/home, others use external URLs', async ({ page }) => {
+  await page.goto('/#/levels');
+  const cards = await page.$$('.level-card.is-available');
+  let localCount = 0;
+  for (const card of cards) {
+    const href = await card.getAttribute('href');
+    const dataLevel = await card.getAttribute('data-level');
+    const isExternal = await card.getAttribute('data-external');
+    if (href === '#/home') {
+      localCount++;
+      expect(isExternal).toBeNull();  // local is NOT external
+    } else {
+      expect(href).toMatch(/^https?:\/\//);  // remote sibling
+      expect(isExternal).toBe('true');
+    }
+  }
+  expect(localCount).toBe(1);  // exactly one local-home card
+});
+```
+
+Run this test as a per-deploy smoke check. Failure means the levels.js was not rewritten when the deploy was forked from the source.
+
+**At the source repo** (this manual's repo, the level you're building FROM): the source's own levels.js needs a one-line update too — flip the new level's entry from `available: false` (placeholder) to `available: true` with the new sibling's absolute URL, `external: true`. Bump that repo's cache version. Without this, the source-repo learners can't navigate forward to the new deploy.
+
+In short: deploying level N<L> is **two** levels.js edits — one in the new repo (local-home for `<L>`, externals for everything else built), one in the source repo (flip `<L>` from disabled to external).
+
+---
 
 ## 12. What we learned about working with Claude Code
 
@@ -1711,6 +1351,24 @@ If using Claude Code (or similar AI assistant) for content authoring + audit:
 
 ---
 
+## 13. Estimated total effort
+
+Based on N5 actuals:
+
+| Phase | Solo + AI | With native reviewer (parallel) |
+|-------|-----------|--------------------------------|
+| Bootstrap + foundation (1) | 1-2 weeks | same |
+| Content authoring (2-8) | 8-10 weeks | 6-8 weeks |
+| UI (parallel, 4-9) | 4-6 weeks | same |
+| Audit cycles (continuous, 6+) | 2-3 weeks | 2-3 weeks |
+| Polish + native review | 2-4 weeks | 1-2 weeks |
+| **Total** | **17-25 weeks** | **13-19 weeks** |
+
+The native reviewer parallelism only saves time if review windows are scheduled BEFORE 100% authoring (per §5.3). Otherwise the native reviewer is a sequential bottleneck.
+
+For N3+, multiply by ~1.5x per level due to vocab/kanji growth and reading-passage complexity.
+
+---
 
 ## 14. Anti-patterns from N5 — the bumper-sticker list
 
@@ -1774,7 +1432,6 @@ Print these and tape them above your monitor:
 
 ---
 
-
 ## 15. Open questions / decisions to make for N<L>
 
 Known unknowns from N5 experience:
@@ -1790,7 +1447,6 @@ Each of these blocks ~1-2 weeks of architecture work. Decide before week 4 of th
 
 ---
 
-
 ## 16. References
 
 - N5 source repo: this directory
@@ -1803,7 +1459,6 @@ Each of these blocks ~1-2 weeks of architecture work. Decide before week 4 of th
 For any next-level development, copy these as starting templates and update level references (replace `n5` with `n<L>`).
 
 ---
-
 
 ## 17. Appendix A — One-Shot Mode supplements
 
@@ -2337,7 +1992,6 @@ Total renderer code is ~150 lines of python-docx — small enough that pulling i
 
 ---
 
-
 ## 18. Pass-20 review findings — disposition
 
 The Pass-20 manual review (`feedback/procedure-manual-review-issues.md`) identified 40 issues. Their disposition in this revision:
@@ -2383,7 +2037,6 @@ The Pass-20 manual review (`feedback/procedure-manual-review-issues.md`) identif
 
 
 ---
-
 
 # §19 Native-teacher audit playbook (added 2026-05-09)
 
@@ -2499,20 +2152,200 @@ When an audit catches a class of bug, **add a new CI invariant** so the next occ
 
 ---
 
+# §20 Vocab.json structural rules + dedup tooling pattern (added 2026-05-09)
 
+The N5 corpus shipped with **41 (form, reading) cross-listing duplicates** in `data/vocab.json` (e.g., `へや` listed in both §13-Locations AND §26-House-and-Furniture as separate entries with the same gloss). Each cross-listing then caused 1+ same-reading **double-tags** in `data/grammar.json` examples — 164 cases total — because the auto-tagger from §3.2.13 tagged BOTH IDs whenever the word appeared. Net effect: a learner clicking through the same word from different examples might see two different vocab cards, or see the same card twice with no indication of canonicality.
+
+The N5 dedup pass (commits `0058f08` + `884a63f`, 2026-05-08) closed this. This section documents the rules and the tooling so N`<L>` doesn't accumulate the same debt.
+
+## §20.1 Structural rules (apply on day 1 of vocab authoring)
+
+1. **One canonical entry per `(form, reading)` tuple unless legitimate polyseme.** Polyseme = different glosses (e.g., `は` = tooth/leaf/topic-particle). Distinguish polysemes via the `.2` / `.3` suffix on the ID, AND the gloss MUST explicitly disambiguate (e.g., `あつい` → §31.あつい "hot weather (暑い)", §31.あつい.2 "hot to touch (熱い)", §31.あつい.3 "thick (厚い)").
+
+2. **Cross-listings are SOURCE-MARKDOWN-ONLY redundancies.** In `KnowledgeBank/vocabulary_n<L>.md`, you may list `へや` under §13-Locations AND §26-House-and-Furniture for pedagogical coherence (the entry shows up in both thematic walks). But the build pipeline collapses these to a SINGLE canonical entry in `data/vocab.json`. The non-canonical (later-listed) appearance in MD is marked `(also in §X)` parenthetical in its gloss, so the build script knows which to drop.
+
+3. **Canonical-selection rule.** When two MD entries share `(form, reading)`:
+   - If exactly one has `(also in §X)` marker → that entry is the cross-listing; drop it; the other is canonical.
+   - If both unmarked but glosses normalize identically → prefer the lower-numbered section.
+   - If both unmarked and glosses differ → polyseme; keep both with `.2` disambiguator IDs and ensure glosses make the distinction explicit.
+
+4. **CI invariant `JA-42`** (see §2.2): no two `data/vocab.json` entries share `(form, reading)` AND have normalized-identical glosses unless one explicitly carries `(also in §X)`.
+
+5. **Polyseme allowlist for `.2` / `.3` IDs.** Document every polyseme cluster in a sidecar — the audit needs to know which (form, reading) duplicates are intentional. Recommended: extend `data/n<L>_kanji_whitelist.meta.json` (or a new `data/vocab_polysemes.json`) with a `polysemes: [{form, reading, senses: [...]}]` list.
+
+## §20.2 Dedup tooling recipe (when retrofitting an existing corpus)
+
+If a corpus already has cross-listing duplicates, the cleanup is mechanical. The N5 script lives at `not-required/tools-archive/dedup_vocab_2026_05_08.py` (in the source repo). Adapt it as follows:
+
+```python
+# Steps 1-2: identify dups + pick canonical
+import json, re
+from collections import defaultdict
+
+with open('data/vocab.json', 'r', encoding='utf-8') as f:
+    vocab_data = json.load(f)
+
+def conservative_normalize(g):
+    # Strip ONLY '(also in §X...)' markers; preserve disambiguating
+    # parentheticals like '(weather; separate adjective from touch)'.
+    g = re.sub(r'\s*\(also in[^)]*\)', '', g)
+    return g.lower().strip().rstrip(',.')
+
+def section_num(s):
+    m = re.match(r'^(\d+)\.', s)
+    return int(m.group(1)) if m else 999
+
+groups = defaultdict(list)
+for e in vocab_data['entries']:
+    key = (e.get('form',''), e.get('reading',''))
+    groups[key].append(e)
+
+# Build mapping: removed_id -> canonical_id
+mapping = {}
+merge_pairs = []
+for key, entries in groups.items():
+    if len(entries) < 2:
+        continue
+    # Group entries by normalized gloss
+    by_gloss = defaultdict(list)
+    for e in entries:
+        by_gloss[conservative_normalize(e.get('gloss',''))].append(e)
+    # Within each gloss-bucket, dedup
+    for norm_g, sub in by_gloss.items():
+        if len(sub) < 2:
+            continue
+        sub_sorted = sorted(sub, key=lambda e: (
+            1 if '(also in' in e.get('gloss','').lower() else 0,
+            section_num(e['section'])
+        ))
+        canonical = sub_sorted[0]
+        for removed in sub_sorted[1:]:
+            mapping[removed['id']] = canonical['id']
+            merge_pairs.append((canonical, removed))
+```
+
+```python
+# Step 3: merge unique data from removed into canonical
+def merge_data(canonical, removed):
+    # Merge unique examples (key = (ja, translation_en))
+    canon_examples = canonical.get('examples', [])
+    canon_keys = {(ex.get('ja',''), ex.get('translation_en','')) for ex in canon_examples}
+    for ex in removed.get('examples', []):
+        key = (ex.get('ja',''), ex.get('translation_en',''))
+        if key not in canon_keys:
+            canon_examples.append(ex)
+            canon_keys.add(key)
+    canonical['examples'] = canon_examples
+    # Take pitch_accent / notes from removed if canonical lacks
+    if 'pitch_accent' not in canonical and 'pitch_accent' in removed:
+        canonical['pitch_accent'] = removed['pitch_accent']
+    if not canonical.get('notes') and removed.get('notes'):
+        canonical['notes'] = removed['notes']
+
+for canonical, removed in merge_pairs:
+    merge_data(canonical, removed)
+```
+
+```python
+# Step 4: migrate references in grammar.json (and reading.json /
+# questions.json if applicable). Walk every JSON value; replace
+# any string that matches a removed ID with the canonical.
+def update_refs(obj, mapping):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(v, str) and v in mapping:
+                obj[k] = mapping[v]
+            elif isinstance(v, list):
+                for i, item in enumerate(v):
+                    if isinstance(item, str) and item in mapping:
+                        v[i] = mapping[item]
+                    else:
+                        update_refs(item, mapping)
+            else:
+                update_refs(v, mapping)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            if isinstance(item, str) and item in mapping:
+                obj[i] = mapping[item]
+            else:
+                update_refs(item, mapping)
+```
+
+```python
+# Step 5: dedup vocab_ids arrays where the mapping created collisions
+def dedup_vocab_id_arrays(obj):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == 'vocab_ids' and isinstance(v, list):
+                seen = set(); deduped = []
+                for vid in v:
+                    if vid not in seen:
+                        seen.add(vid); deduped.append(vid)
+                obj[k] = deduped
+            else:
+                dedup_vocab_id_arrays(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            dedup_vocab_id_arrays(item)
+```
+
+```python
+# Step 6: remove duplicate entries from vocab.json
+removed_ids = set(mapping.keys())
+vocab_data['entries'] = [e for e in vocab_data['entries']
+                         if e['id'] not in removed_ids]
+
+# Step 7: write back
+with open('data/vocab.json', 'w', encoding='utf-8') as f:
+    json.dump(vocab_data, f, ensure_ascii=False, indent=2)
+    f.write('\n')
+```
+
+## §20.3 Source-of-truth sync (KnowledgeBank parity)
+
+After the dedup pass touches `vocab.json`, JA-31 (vocab MD/JSON parity) will fail because `KnowledgeBank/vocabulary_n<L>.md` still contains the cross-listings as separate lines. Fix in lockstep:
+
+- Walk every line `- WORD - [POS] gloss` under section `## NN. Title`. If `(WORD, NN)` matches a `(removed_form, removed_section_num)` from the dedup mapping, delete that line.
+- **Watch for over-removal of non-cross-listing entries with the same form.** If section §30 has `いる - [v2] to exist` AND `いる - [v1] to need` (the 要る polyseme), naively matching by `(form, section)` removes BOTH. Match by `(form, section, gloss-startswith)` to preserve polysemes — OR match by the explicit `(also in §X)` marker since cross-listings carry that and polysemes don't.
+- Verify no X-6.6 / JA-31 regressions before committing the MD changes.
+
+## §20.4 Three-or-more entry groups need extra care
+
+Some `(form, reading)` groups have 3+ entries (e.g., `あつい` has 4 in N5: weather + adjective-weather + adjective-touch + adjective-thick). The dedup script must:
+
+1. Group by `(form, reading)`.
+2. Within each group, sub-group by **conservative-normalized gloss** (strip ONLY `(also in)` markers, NOT disambiguating parentheticals).
+3. Within each sub-group, dedup by canonical-selection rule.
+4. Polyseme entries (different normalized glosses) survive untouched.
+
+For N5: `あつい` weather (§14) and adjective-weather (§31.0) had identical normalized glosses → deduped to one. `あつい.2` (touch, 熱い) and `あつい.3` (thick, 厚い) had distinct normalized glosses → preserved.
+
+If your normalize_gloss function is too aggressive (strips disambiguating parentheticals), you'll collapse polysemes and lose the touch/thick senses. The N5 audit caught this regression early; the conservative normalization is the safe default.
+
+## §20.5 Verification after dedup
+
+- `python tools/check_content_integrity.py`: 50/50 (or current invariant count) green.
+- Sample dedup'd entries: pick 5 random `(form, reading)` cases; verify the canonical entry has all examples / metadata from the merged copy.
+- Spot-check `data/grammar.json`: for each example whose `vocab_ids` list shrunk, confirm the surviving tags resolve to existing vocab entries.
+- Bump `CACHE_VERSION` in `sw.js`; refresh `data/version.json`; commit + push.
+
+## §20.6 What this protects against in N`<L>` and beyond
+
+If `vocab.json` ships clean from day 1 (single canonical per (form, reading), `(also in §X)` markers used for MD cross-listings), the N`<L>` corpus avoids:
+
+- The 164-double-tag downstream pollution of grammar.json.
+- The ambiguity in vocab-detail page rendering ("which entry should I show when the user clicks `へや`?").
+- The KnowledgeBank-parity drift that JA-31 catches but only because it was authored to handle homograph polysemes via set-valued matching (a workaround for vocab dup that wouldn't be needed if dups didn't exist).
+
+The day-1 effort to set up the canonical-per-tuple rule is small. The retrofit cost (N5 paid this) is a multi-hour audit + dedup + MD-sync + ref-migration pass. Do it on day 1.
 
 ---
-
-# Appendices
-
-> **Appendices** — schemas, templates, and dated session-learning notes. Reference material; not part of the linear procedure.
 
 # §B Appendix B — Schemas & rules extracted from N5 (merged 2026-05-04)
 
 *Was at `<source-repo>/specifications/procedure-manual-appendix-b-extracted-from-n5.md`. Merged inline so the procedure manual is self-contained for Mode-B one-shot execution. Per the original Pass-20 review (`feedback/procedure-manual-review-issues.md`), having Appendix B inline is a one-shot prerequisite.*
 
 ---
-
 
 # Procedure Manual Appendix B — Extracted from N5 Codebase
 
@@ -2523,7 +2356,6 @@ When an audit catches a class of bug, **add a new CI invariant** so the next occ
 This appendix extracts schemas, rules, configurations, and conventions from the actual N5 codebase so a Mode-B agent can implement them without inferring from prose. Every section here corresponds to a specific deferred F-20 item.
 
 ---
-
 
 ## B.1 Vocab-ID slug derivation rule (closes F-20.20, P0)
 
@@ -2572,7 +2404,6 @@ while vid in seen_ids:
 **CI invariant** that depends on this rule: JA-12 (Kanji KB / JSON consistency) implicitly checks the round-trip from MD section → JSON id; if the slug rule diverges, the consistency check fails.
 
 ---
-
 
 ## B.2 Audio manifest schema (closes F-20.18, P0)
 
@@ -2632,7 +2463,6 @@ For items where `skipped === true`:
 - Plan to mix `native` for listening items + `synthetic-gtts` for grammar/reading. Voice mixing is supported in the same manifest.
 
 ---
-
 
 ## B.3 JSON schemas for data/*.json (closes F-20.16)
 
@@ -2837,7 +2667,6 @@ See B.2.
 
 ---
 
-
 ## B.4 i18n locale-file format (closes F-20.19)
 
 **Source:** `locales/*.json` (5 files: en, vi, id, ne, zh).
@@ -2881,7 +2710,6 @@ See B.2.
 - Locale selection: URL hash override (`#/?lang=vi`) > localStorage `lang` > browser `navigator.language` > `"en"`.
 
 ---
-
 
 ## B.5 Front-end test framework + Playwright config (closes F-20.23)
 
@@ -2955,7 +2783,6 @@ npm run test:smoke:headed       # watch the browser
 
 ---
 
-
 ## B.6 UI module list with descriptions (closes F-20.22)
 
 **Source:** files in `js/` directory of N5 (25 files as of HEAD `7e82cc4`).
@@ -3001,7 +2828,6 @@ npm run test:smoke:headed       # watch the browser
 **For any next level:** copy the module list verbatim; adapt `n5` → `n<L>` references.
 
 ---
-
 
 ## B.7 KB markdown grammar / BNF (closes F-20.15)
 
@@ -3122,7 +2948,6 @@ Same shape as reading_n<L> with these additions:
 
 ---
 
-
 ## B.8 Invariant rule specifications (closes F-20.17)
 
 **Source:** function-by-function extraction from `tools/check_content_integrity.py`. Each rule below is the actual logic — implementable from this spec without reading the N5 source.
@@ -3173,7 +2998,6 @@ Same shape as reading_n<L> with these additions:
 **Augmented sets:** rules JA-1 / JA-13 / JA-16 reference whitelist files. The whitelist files are augmentable per-level; agent-added exceptions MUST include a `# WHY: <reason>` comment justifying inclusion. Pass-22 candidate: enforce comment-presence check.
 
 ---
-
 
 ## B.9 Diagnostic Summary algorithm (closes F-20.24)
 
@@ -3226,7 +3050,6 @@ All recommendations carry an estimated time ("~5 min", "~15 min") computed as `w
 
 ---
 
-
 ## B.10 Kanji-tier vs grammar-tier interaction (closes F-20.21, F-20.25)
 
 ### B.10.1 Tier values per corpus
@@ -3271,7 +3094,6 @@ For each higher level X:
 This is the "recommended" composition. An alternative "strict-level-only" mode is possible (whitelist = NX only, JA-13 fails on prerequisites) but it doesn't match how learners actually progress. Stick with union.
 
 ---
-
 
 ## B.11 External-corpus URL list per level (closes F-20.26)
 
@@ -3321,7 +3143,6 @@ Every external-corpus extract must have:
 - A note like "Reference material for triangulation only; not used in our question bank."
 
 ---
-
 
 ## B.12 Content-inventory extraction recipes (acknowledges F-20.12, F-20.13, F-20.14)
 
@@ -3408,7 +3229,6 @@ The honest one-shot deliverable: run the extraction scripts as part of the build
 
 ---
 
-
 ## B.13 What this appendix does NOT cover
 
 The remaining Pass-22 polish items (F-20.27 through F-20.35) are Pass-22 candidates and not addressed here:
@@ -3429,13 +3249,11 @@ Each is well-defined enough that it can be addressed in a focused future commit;
 
 ---
 
-
 # §C Appendix C — Pass-22 polish specifications (merged 2026-05-04)
 
 *Was at `<source-repo>/specifications/procedure-manual-appendix-c-pass22-polish.md`. Inline now. Distractor rubric / ko-so-a-do scene-context standard / JA-2/JA-23 invariant interaction / augmented-set escape-valve guard / auto-generation stop-condition / full PWA spec / same-pattern-string conflict-resolution rule.*
 
 ---
-
 
 # Procedure Manual Appendix C — Pass-22 Polish Specifications
 
@@ -3448,7 +3266,6 @@ This appendix bundles the seven Pass-22 documentation-polish items into a single
 - **F-22.7** TASKS.md template → `specifications/tasks-md-template.md`
 
 ---
-
 
 ## C.1 Distractor explanation rubric (closes F-22.1)
 
@@ -3515,7 +3332,6 @@ For ~530 N4 questions × 3 distractors each = ~1600 distractor explanations:
 4. **LLM-author then native-review** is acceptable when budget is tight; LLM produces the 4-sentence draft using this rubric, native teacher refines for naturalness.
 
 ---
-
 
 ## C.2 Ko-so-a-do scene-context formatting standard (closes F-22.2)
 
@@ -3593,7 +3409,6 @@ A valid scene establishes at least ONE of: where the speaker is, where the liste
 
 ---
 
-
 ## C.3 JA-2 / JA-23 invariant interaction (closes F-22.3)
 
 **Problem solved:** Two particle-related invariants overlap and were ambiguously specified. JA-2 ("particle distractors are valid") and JA-23 (multi-correct scanner). Whether a JA-23-flagged question fails JA-2 (hard gate) or just warns (advisory) was unclear.
@@ -3664,7 +3479,6 @@ JA-6 (no two-correct-answers) remains the hard gate for cases the scanner can pr
 
 ---
 
-
 ## C.4 Augmented-set escape-valve guard (closes F-22.4)
 
 **Problem solved:** JA-13 / JA-1 / JA-16 invariants reference whitelist files (`n<L>_kanji_whitelist.json`, `n<L>_vocab_whitelist.json`). An agent or contributor could silently add an out-of-scope item to silence a violation. There's currently no enforcement that exceptions be justified.
@@ -3726,7 +3540,6 @@ Without the WHY-comment guard, the scope-enforcement story is one-sided: the int
 
 ---
 
-
 ## C.5 Auto-generation stop-condition formalization (closes F-22.6)
 
 **Problem solved:** Procedure manual §3.2.1 prohibits agent-generated filler MCQs but doesn't define a hard stop condition. Appendix A.4 partially addresses this with the minimum-viable subset (per-layer targets), but a more explicit stop rule prevents over- or under-generation.
@@ -3768,7 +3581,6 @@ def is_batch_done(level, mondai):
 Record the result in TASKS.md as `Pass-N <name> stop-condition check: PASS / NEED <items>` so future review knows the authoring stop was deliberate.
 
 ---
-
 
 ## C.6 PWA spec extraction (closes F-22.8)
 
@@ -3855,7 +3667,6 @@ The Playwright smoke suite includes:
 
 ---
 
-
 ## C.7 Same-pattern-string conflict resolution rule (closes F-22.9)
 
 **Problem solved:** Pass-19 cleaned up 10 redundant grammar pattern entries that shared `pattern` strings. Pass-22 wants a rule for what the agent does the next time it considers adding a new pattern entry.
@@ -3900,7 +3711,6 @@ JA-24 (no duplicate `pattern` strings with overlapping `meaning_en`) catches vio
 
 ---
 
-
 ## C.8 Cross-references
 
 These polish items strengthen but don't replace the existing manual content:
@@ -3925,13 +3735,11 @@ Together with Appendices A and B, the procedure manual now closes **38 of 40 Pas
 
 ---
 
-
 # §D TASKS.md canonical template (merged 2026-05-04)
 
 *Was at `<source-repo>/specifications/tasks-md-template.md`. Day-1 bootstrap template for any new-level build (`<L>` ∈ {4, 3, 2, 1}). Copy this section verbatim into `TASKS.md` at the new repo root and start populating.*
 
 ---
-
 
 # TASKS.md — Canonical Template
 
@@ -4105,11 +3913,9 @@ These caused real pain in N5; do not repeat:
 
 ---
 
-
 # Appendix C — Session learnings 2026-05-10/11 (UI-audit + content-enrichment cycle)
 
 > Added 2026-05-11 after a single chat session that authored ~3,400 new pedagogical entries across all 5 N5 modules, executed a full UI audit, fixed 3 waves of bugs, and uncovered a class of "orphan data" defects. **Read this appendix in addition to §1–§18 + Appendix A/B before starting any Nx build.** It captures the specific traps that cost the most time in this session.
-
 
 ## C.1 The orphan-data defect class — the single biggest lesson
 
@@ -4196,7 +4002,6 @@ The wiring is cheap. The risk is shipping content that never reaches users. The 
 
 ---
 
-
 ## C.2 The minified-vs-unminified file pair gotcha
 
 **Architecture in N5:**
@@ -4225,7 +4030,6 @@ cp js/strategy.js       js/min/strategy.js
 
 ---
 
-
 ## C.3 Cache busting on `index.html`
 
 **Symptom:** edit `js/min/learn-grammar.js`. Reload preview. See the OLD code still rendering. Service worker cleared. HTTP no-cache. Still old code.
@@ -4244,7 +4048,6 @@ cp js/strategy.js       js/min/strategy.js
 The build_js.py mentioned in C.2 should bake this in: auto-increment the patch on every successful build.
 
 ---
-
 
 ## C.4 New schema patterns established in this session
 
@@ -4425,7 +4228,6 @@ Wire it via a new `js/strategy.js` renderer + route `#/strategy` in `js/app.js` 
 
 ---
 
-
 ## C.5 CI invariant `JA-13` (out-of-scope kanji) and `SKIP_SUBTREE_FIELDS`
 
 **JA-13 enforces: no kanji outside `data/n<L>_kanji_whitelist.json` may appear in user-facing fields of `grammar.json`, `questions.json`, `reading.json`, `listening.json`.**
@@ -4449,7 +4251,6 @@ SKIP_SUBTREE_FIELDS = {
 
 ---
 
-
 ## C.6 Localization parity — the chrome gap
 
 **Symptom (N5 cycle 5 audit):** UI top-nav localized to Hindi correctly. Body content (syllabus cards, study order, progress labels, action buttons, ~14 section headings on grammar detail) all stayed English.
@@ -4469,7 +4270,6 @@ SKIP_SUBTREE_FIELDS = {
 - Don't mix conventions on the same field.
 
 ---
-
 
 ## C.7 Audio pipeline — manifest is the source of truth
 
@@ -4493,7 +4293,6 @@ SKIP_SUBTREE_FIELDS = {
 
 ---
 
-
 ## C.8 The "dialogue" free-tag bug
 
 **Symptom:** listening list rendered an extra category "dialogue (3)" alongside the 4 official mondai (かだいりかい / ポイントりかい / はつわひょうげん / そくじおうとう).
@@ -4516,7 +4315,6 @@ Add JA-XX invariant: `every listening item's format ∈ ALLOWED_FORMAT and forma
 
 ---
 
-
 ## C.9 Empty `form` field on kanji examples — a content-authoring trap
 
 **Symptom:** on 7 of 12 example rows for kanji 日, the kanji-form column was visibly empty in the rendered table. Reading and gloss filled; form blank.
@@ -4528,7 +4326,6 @@ Add JA-XX invariant: `every listening item's format ∈ ALLOWED_FORMAT and forma
 **Lesson for Nx:** add invariant `JA-XX`: every kanji example MUST have a non-empty `form` AND `reading` AND `gloss`. Three sister fields; never one without the others.
 
 ---
-
 
 ## C.10 Pattern title quality — no placeholder labels
 
@@ -4545,7 +4342,6 @@ Add JA-XX invariant: `every listening item's format ∈ ALLOWED_FORMAT and forma
 Lint rule: forbid `pattern ∈ {"Verb", "Adjective", "Noun", "Adjective + Noun"}`.
 
 ---
-
 
 ## C.11 Commit workflow for Claude Code Desktop
 
@@ -4576,7 +4372,6 @@ This single-line shape matches existing allow rules cleanly and was validated ac
 
 ---
 
-
 ## C.12 Backup-file protection policy
 
 **Set in N5 `.claude/CLAUDE.md` 2026-05-10:**
@@ -4596,7 +4391,6 @@ If a deny rule fires when you actually need to act on a backup, surface to user 
 **For Nx:** copy these deny rules to the new project from day 1.
 
 ---
-
 
 ## C.13 Quality bars for Nx — minimum coverage targets
 
@@ -4651,7 +4445,6 @@ Use these as the "complete module" definition. Mirror the N5 closure approach:
 
 ---
 
-
 ## C.14 The order-of-operations for Nx (revised based on this cycle)
 
 > **Critical change from §1-§5:** WIRE-AS-YOU-AUTHOR. Don't author 16 batches of data and discover at the end that the UI never read 60% of it.
@@ -4694,7 +4487,6 @@ Recommended per-module sequence (apply to each of grammar / vocab / kanji / dokk
 
 ---
 
-
 ## C.15 Anti-patterns from this session (bumper-sticker list)
 
 1. **Authoring data without wiring the renderer** — see C.1. The most expensive mistake of the session.
@@ -4710,7 +4502,6 @@ Recommended per-module sequence (apply to each of grammar / vocab / kanji / dokk
 11. **Overwriting existing backup files** — see C.12. Destroys recovery history.
 
 ---
-
 
 ## C.16 What this appendix does NOT cover
 
@@ -4736,11 +4527,9 @@ Things that are still open issues at the time of writing this appendix (transpar
 
 ---
 
-
 # Appendix D — 2026-05-12 / 2026-05-13 Audit Cycle Learnings
 
 This appendix captures lessons from the two-day audit cycle (commits `76a7465` through `f46263c`, 32 total commits) that took the 2026-05-12 N5 richness audit to terminal state (18 Done, 3 Avoid, 0 pending across 21 audit items). Major themes: **audio pipeline canonicalization**, **content-quality lift methodology**, **anti-item CI enforcement**, **legal-posture documentation**, and **provenance honesty discipline**.
-
 
 ## D.1 Audio engine canonicalization — VOICEVOX over gtts
 
@@ -4869,7 +4658,6 @@ The VOICEVOX engine binary is LGPL-3.0. **Do NOT bundle the engine in the repo.*
 
 If a contributor wants to re-render audio, they install VOICEVOX locally via WinGet / their platform's package manager.
 
-
 ## D.2 Synthetic ambient context audio — ffmpeg-only, no third-party assets
 
 The 50 listening items needed light ambient atmospheric layers (café / station / classroom / etc.) to remove the "dead silent room" artifact of pure voice renders. **CC-0 ambient sample sourcing** (freesound.org / Pixabay) was the audit's recommended path but **requires external network access at build time** which violates the build-time-offline contract.
@@ -4916,7 +4704,6 @@ This is **synthetic**, not recorded sound effects. Quality is "room-tone-ish" bu
 > Generated procedurally by ffmpeg's `anoisesrc` filter. No third-party sound effects or CC-0 samples used. Future quality lift could replace synthetic layers with recorded CC-0 samples when a sourcing path is established.
 
 **For Nx**: if you have a sourcing path (freesound.org account + CC-0 download permissions), prefer recorded samples. Synthetic is the fallback when external assets can't be acquired during build.
-
 
 ## D.3 Section-10 anti-items — CI enforcement pattern
 
@@ -4973,7 +4760,6 @@ After every audit-cycle close-out, **add an invariant for each gain that should 
 
 This is what locked today's audit close-out into permanent enforcement.
 
-
 ## D.4 Anti-item escalation — Defer → Avoid for legal-risk items
 
 Audit items can be in one of four states: **Fix** / **Defer** / **Avoid** / **Done**. The default for newly-registered items is Fix (action this cycle) or Defer (gated on external decision). **Avoid** is the deliberate non-feature state.
@@ -5004,7 +4790,6 @@ If the next-level audit prompt names specific copyrighted works (anime / drama /
 - Or skip the dimension entirely (terminal Avoid)
 
 Document the chosen path in the audit-cycle's CHANGELOG entry so future audit cycles don't re-relitigate.
-
 
 ## D.5 Provenance honesty discipline — phases 1 → 2 → 3 → 4 → 5
 
@@ -5062,7 +4847,6 @@ if reuse_factor > 2.5:
     print(f"Copy-paste problem: {reuse_factor:.1f}x reuse — author pattern-instance content")
 ```
 
-
 ## D.6 Backup discipline — versioned + gitignored for large rendered assets
 
 The session created 3 large rendered-asset backup directories:
@@ -5096,7 +4880,6 @@ feedback/<file>.bak_pre_<action>_<date>   # for non-code data (xlsx etc.)
 
 Same date can have multiple `_v2`, `_v3` suffixes if multiple backups are needed in one day. **Never** overwrite an existing backup file.
 
-
 ## D.7 Audit-prompt drift handling
 
 This session found **multiple false-pending findings** where the audit prompt's expectations didn't match live data. Pattern (continuing the C.6 drift catalog):
@@ -5125,7 +4908,6 @@ Description: Closed YYYY-MM-DD as FALSE PENDING: <evidence-of-prior-shipping>
 
 The N5 audit prompt has a "REFRESH STATE BEFORE AUDITING" Python block that should be run live. **Always rebuild counts from the live data files** — never trust the prompt's CURRENT STATE cells which drift every release.
 
-
 ## D.8 Quality-gate progression by phase
 
 This session's content-quality work followed a progression that's worth codifying for Nx:
@@ -5143,7 +4925,6 @@ This session's content-quality work followed a progression that's worth codifyin
 **Total for full polish to 100% native_reviewed**: ~7-8 hours of work spread across the audit cycle.
 
 For Nx, plan the phase progression UPFRONT instead of discovering it. Author pattern-instance from day one (saves Phase 5b). Use accurate provenance from day one (saves Phase 5a).
-
 
 ## D.9 Anti-patterns from this session (bumper-sticker list)
 
@@ -5188,7 +4969,6 @@ When you add a new "English commentary" field to the schema and exempt it from t
 
 **Process lesson:** "CI green" is not the same as "convention green." Whenever you add a new content field, ask: *what other unspoken conventions apply to this field that the existing checks don't enforce?* Then write the missing checks before authoring content into the field — not after a maintainer asks "is this N5 level?".
 
-
 ## D.10 What this appendix does NOT cover
 
 Things that are working correctly and need no change for Nx:
@@ -5207,4 +4987,3 @@ Things that remain open for the next maintainer:
 ---
 
 *Appendix D prepared 2026-05-13 after the two-day richness-audit close-out cycle (2026-05-12 + 2026-05-13). Covers 32 commits, 18 audit items closed + 3 escalated to Avoid, 17 new CI invariants, the canonical VOICEVOX pipeline, synthetic ambient mixing, and the 5-phase content-quality progression.*
-
