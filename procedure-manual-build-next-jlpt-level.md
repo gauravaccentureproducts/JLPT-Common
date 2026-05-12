@@ -858,6 +858,42 @@ F-12 wanted `git rm KnowledgeBank/externally_sourced_n5.md`. Pre-deletion grep s
 
 **Anti-corollary:** the same pattern applies to deleting CSS classes, JS modules, data-schema fields, locale keys — anywhere a value is referenced by another file's logic. Grep before delete is non-negotiable.
 
+#### 3.2.33 Don't ship half-applied ウ音便 keigo forms in `politeness_ladder.humble` (HIGH — N5 n5-181 たかう→たこう fix 2026-05-11)
+
+`politeness_ladder.humble` rows render i-adjective + ございます keigo forms (e.g. `たこうございます` from 高い). The ウ音便 (u-sound-change) derivation has TWO mandatory steps and missing either produces a form no modern native speaker writes:
+
+1. **Drop the `く`/`き` of the 連用形** — `たかく → たかう`, `おいしく → おいしう`, `やすく → やすう`
+2. **Contract the resulting vowel pair** per i-adjective vowel:
+   - **`a + u → ō`** — たかう → **たこう**, ありがたう → **ありがとう**, はやう → **はよう**
+   - **`i + u → yū`** — おいしう → **おいしゅう**, うれしう → **うれしゅう**, やさしう → **やさしゅう**
+   - **`o + u → ō`** — のう (e.g. 良う / 無う) → **のう** (irregular)
+   - **`u + u → uu`** (stays) — やすう → **やすう** (no contraction; this is the false-positive trap in sweeps)
+
+The N5 audit caught `たかうございますね` (step 1 applied, step 2 missed). Native speakers read this as broken. Fix: `たこうございますね`. Compare the well-known forms `ありがとう ございます`, `おはよう ございます` — same rule.
+
+**Fix policy:**
+
+- Author humble forms by formula, not intuition. Look up the i-adjective's stem vowel, apply the matching contraction rule.
+- When sweeping for related bugs across `politeness_ladder.humble`: grep for `[たはなあいう]う` followed by `ござ` to catch half-applied forms; remember `u+u` is a false positive (verify before "fixing").
+- A future audit pass should systematically check every `politeness_ladder.humble` entry containing `ございます` against the matched i-adjective + contraction rule.
+
+**Anti-corollary:** the same rules apply to plain-text `humble` register vocab anywhere in the corpus (rare in N5 since humble register is N3+ scope), but `politeness_ladder` is the field most likely to carry it. The `politeness_ladder` field is intentionally exempted from JA-13 (out-of-scope-kanji check) — see `SKIP_SUBTREE_FIELDS` in `check_content_integrity.py` — because by design it surfaces N3+ keigo forms for cross-level pedagogical context. The CI gate cannot catch this class of bug; native-teacher audit is the only check.
+
+#### 3.2.34 Don't leave `form` field empty on grammar examples when sibling examples in the same pattern have it set (MEDIUM — N5 n5-181 watermark gap 2026-05-11)
+
+Grammar examples in `data/grammar.json` can carry a `form` field whose value renders as a green category badge above each example in the detail-page UI (e.g. `affirmative`, `tasty-exclamation`, `exclamation-expensive`). When some examples in a pattern have `form` set and others don't, the renderer falls back to an empty `_` placeholder where the badge should be — visible content drift on the example list. Users perceive the empty badges as "watermarks missing" or "category labels missing" depending on how they describe the UI.
+
+**N5 case:** pattern `n5-181` (`～なあ`) had 7 of 10 examples with `form` set (affirmative / tasty-exclamation / exclamation-X variants) and 3 examples with no `form` field at all. The 3 unbadged rows rendered as `_ きれいだなあ。` / `_ おなかが すいたなあ。` / `_ いい てんきだなあ。` while sibling rows showed proper badges. Visible drift; flagged by user during routine review.
+
+**Fix policy:**
+
+- For each pattern, examples should be either ALL badged or ALL unbadged. Mixed state is the bug.
+- When authoring new examples for a pattern that already has badges, set `form` on every new example before commit.
+- When authoring a pattern fresh, decide up front whether `form` is needed for this pattern (depends on whether the pattern has distinguishable usage scenarios). Either set it on all 10 examples or none.
+- Consider adding a CI invariant **JA-49: `data/grammar.json` examples within a pattern have consistent `form`-field presence (all set or all unset)**. The check is straightforward — for each pattern, the count of examples with `form` set must be either 0 or equal to total. Implementation cost: ~15 lines in `check_content_integrity.py`. Pending future audit pass.
+
+**Anti-corollary:** the same pattern applies to ANY optional UI-facing badge/tag field that has visible fallback rendering. Audit list to check: `usage_role`, `register`, `tier`, `format_type`, `provenance` flags — anywhere a partially-populated field leaks an empty-state visual to the UI.
+
 #### 3.2.27 Don't expect `align-items: center` on a flex parent to center text inside a min-height-enforced child (MEDIUM — N5 menu-bar centering 2026-05-10)
 
 The N5 header had `<nav class="primary-nav">` with `display: flex; align-items: center;` containing `<a>` links. Each link was bumped to `min-height: 44px` by the global tap-target accessibility rule. With `display: inline` (the `<a>` default), the 44px-tall link box held the text on the BASELINE — visually below the geometric center of the 44px box. The whole `<nav>` was centered in the 56px header band, but the *text inside each link* sat low.
@@ -1309,6 +1345,10 @@ If using Claude Code (or similar AI assistant) for content authoring + audit:
 
 16. **`.commit_msg.tmp` collision pattern.** The file-based commit pattern (`git commit -F .commit_msg.tmp && rm -f .commit_msg.tmp`) collides with the user's own staged commit messages — Claude Code sessions often run alongside human-authored commit drafts staged in the same file. Pattern: BEFORE overwriting `.commit_msg.tmp`, `cp .commit_msg.tmp .commit_msg_user_pending.txt` to preserve any user content (`.txt` extension dodges the `*.bak*` deny rules). AFTER your `commit && rm -f .commit_msg.tmp && git push`, `mv .commit_msg_user_pending.txt .commit_msg.tmp` restores it. The user keeps their draft; the agent gets clean commits. The N5 session committed 9 times across user-staged content without losing the user's UI Wave 3 draft until a linter swept it after F-9+F-10 — at which point the draft was recoverable from prior-tool-call context anyway.
 
+17. **`--dangerously-skip-permissions` CLI flag is the escape hatch for matcher bugs.** When `~/.claude/settings.json` has `defaultMode: bypassPermissions` + `skipDangerousModePermissionPrompt: true` + the literal exact compound command as an explicit `Bash(...)` allow rule + a restart, AND the same routine command still triggers an "Allow once" prompt every invocation, you've hit a Claude Code matcher bug — not a config gap. No further config edits help. Launch Claude Code with `claude --dangerously-skip-permissions` from a terminal; that flag overrides the matcher entirely for the session. The deny list (force-push, `rm -rf`, backup overwrites, project-specific blocks) still applies, so the safety floor remains. Persist the flag as a desktop shortcut or shell alias once it's confirmed to work for the project. File a `/feedback` bug report from inside Claude Code while you're at it — the matcher bug needs to reach Anthropic. The N5 session burned ~4 hours iterating permission patterns + restart cycles before falling back to the CLI flag; recognize the symptom faster next time (see §12 #18).
+
+18. **The 3-round stop point.** If the same class of failure has been fixed-and-retested 3 times with the same approach and is still firing, STOP. The architecture isn't broken at the per-rule level — it's broken at the engine level. Round 4 of "add another permission pattern" / "add another invariant exemption" / "tweak the regex one more time" is sunk cost. Switch approach: CLI flag, alternate tool, escalation to maintainer, or workaround that sidesteps the broken layer entirely. The N5 permission-prompt saga is the canonical example — by round 3 the answer should have been *"this is a matcher bug, use `--dangerously-skip-permissions`"* not *"let me add 8 more allow patterns."* The rule of thumb: a 3-round failure means your mental model of the broken layer is wrong; investigate the layer itself rather than its inputs.
+
 ---
 
 ## 13. Estimated total effort
@@ -1380,6 +1420,9 @@ Print these and tape them above your monitor:
 25. Don't trust an audit's named-file scope as exhaustive — `grep -rln "<risk-keyword>" .` after every audit closure surfaces adjacent files in the same risk class. The N5 F-1 (DMCA) audit named 2 files; grep surfaced a third with ~90% of the actual exposure. Register the gap as a NEW finding, don't unilaterally expand the original. (§3.2.30)
 26. Don't trust metadata when data, code, and docs disagree about an external dependency (TTS provider, font source, library version) — inspect the actual output artifact for ground truth. For audio: ID3v2 frame inspection (`Lavf` in TSSE = ffmpeg/libavformat). For PDFs: `/Producer` string. For images: EXIF generator. (§3.2.31)
 27. Don't trust project-level `.claude/settings.local.json` to silence Claude Code permission prompts — global `~/.claude/settings.json` is the authoritative source. Put all patterns there; the project file is a defensive duplicate, not the kill switch. (§3.2.28, §12 #14)
+28. Don't iterate permission patterns past round 3 — if `defaultMode: bypassPermissions` + `skipDangerousModePermissionPrompt: true` + literal-command allow rule + restart still prompts, it's a Claude Code matcher bug. Switch to `claude --dangerously-skip-permissions` CLI flag and file `/feedback`. The N5 session burned ~4 hours iterating patterns before falling back to the flag. (§12 #17, §12 #18)
+29. Don't author humble-register i-adjective + ございます forms by intuition — apply the ウ音便 contraction rules: `a+u→ō` (たかい→たこう), `i+u→yū` (おいしい→おいしゅう), `u+u→uu` (やすい→やすう stays). Half-applied forms (`たかう ございます`) read as broken to native speakers. `politeness_ladder.humble` is JA-13-exempt by design, so CI cannot catch this — native-teacher audit is the only check. (§3.2.33)
+30. Don't leave the `form` field empty on grammar examples when sibling examples in the same pattern have it set — mixed state leaks an empty `_` badge to the UI. Either all examples in a pattern have `form`, or none do. Same anti-corollary applies to `usage_role`, `register`, `tier`, `format_type`, and any optional UI-rendered tag field. (§3.2.34)
 
 **Spec hygiene**
 19. Don't fragment a spec into multiple files when one role reads all of them — merge by consumer (§3.2.11), not by topic.
