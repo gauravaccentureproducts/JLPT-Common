@@ -5252,6 +5252,38 @@ Total Claude time spent on the "10-12 day" plan: well under an hour, across a ha
 
 **Process lesson:** Time is the wrong dimension for Claude work; the right dimension is **turns × decisions × verifications**. When a maintainer asks for an estimate, give them the count of times they'll need to engage and the count of validation gates, not a wall-clock duration that projects human labor.
 
+23. **Calendar-cadence audit reruns at saturation** — see D.9.23 below. The N5Improvement audit was run 3 times in one session (29 / 5 / 0 actionable findings). The third run was zero-signal. Continuing to auto-rerun the same audit against an already-saturated corpus wastes maintainer review attention on confirmatory output and risks re-importing drift that was just corrected.
+
+### D.9.23 Anti-pattern #23: re-running the same audit on autopilot after saturation
+
+When an audit cycle closes every actionable finding (0 Fix, 0 Defer in the tracker), the prompt has reached its saturation point against the current corpus. Further runs produce one of two outputs: (a) zero-signal "confirmatory" reports, or (b) drift-discovery findings that re-litigate stuff the prior run already fixed. Both are negative-value: they consume maintainer review attention without surfacing actionable work.
+
+**Symptoms:**
+- Audit run N produced X findings → all closed.
+- Audit run N+1 produced Y findings (Y < X) → all closed.
+- Audit run N+2 produces 0 findings → recommended-stop signal.
+- Continuing past this point: the auditor starts producing P5 "maintenance" items the corpus doesn't need (e.g., "consider adding metric badges to surface trust") just to fill the Section 5 / 6 slots.
+
+**Trigger conditions for re-running an audit (the only valid five):**
+1. Major content-shape change ships (new chapter, new surface, new scorecard dimension).
+2. The width-freeze is lifted (corpus widths grow).
+3. The next level is unblocked (port the prompt to that level's path).
+4. Specific reviewer / external request asks for a fresh audit.
+5. Drift suspicion: refresh tool reports significantly different numbers than the prompt's stale CURRENT STATE table.
+
+**Anti-triggers (do NOT auto-rerun on):**
+- /loop or scheduled-wakeup cadences.
+- Routine release / commit / push events.
+- Auto-pilot "let's check if anything's new."
+
+**Worked example from N5:**
+The 2026-05-13 cycle's three audit runs produced commits bad804a (29 findings) → 5cfd230 (5 findings) → no commit (0 findings). The third run's transcript was a copy of the second with one less column. The maintainer correctly called stop. We then added a "DO NOT RUN ON A CALENDAR / AUTO-CADENCE" header block to the top of `prompts/N5Improvement.txt` codifying the 5 valid trigger conditions.
+
+**Generalization for next level:**
+Every level's improvement-audit prompt should carry the same "trigger conditions" header so that the next maintainer (or next Claude) doesn't autopilot the cycle. When porting a prompt from N5 → N4, copy the header verbatim.
+
+**Process lesson:** "audit cadence" is a project-management habit; "audit triggers" is the right discipline. Audits should fire on real changes to the artefact being audited, not on the calendar. Saturation is a real state — recognize it and stop.
+
 
 ## D.10 What this appendix does NOT cover
 
