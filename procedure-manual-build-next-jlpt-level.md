@@ -5188,6 +5188,70 @@ When you add a new "English commentary" field to the schema and exempt it from t
 
 **Process lesson:** "CI green" is not the same as "convention green." Whenever you add a new content field, ask: *what other unspoken conventions apply to this field that the existing checks don't enforce?* Then write the missing checks before authoring content into the field — not after a maintainer asks "is this N5 level?".
 
+22. **Estimating audit work in human-engineer days instead of Claude execution time** — see D.9.22 below. The 2026-05-13 audit cycle was scoped as "10-12 days of P1 work"; it closed in well under an hour of actual script runs + minutes of authoring spread across a handful of conversation turns. Person-day estimates project a human's manual labor onto a model that runs scripts in seconds; they routinely overstate by 10-50× and mislead the maintainer about what to schedule.
+
+### D.9.22 Anti-pattern #22: estimating in human-engineer days
+
+Person-day estimates are the wrong unit for Claude-executed work. They project a human's manual-labor speed onto a model that:
+- Runs mechanical content fills as one script per turn
+- Verifies with one CI invocation
+- Authors structured content in batches limited by context, not typing speed
+- Discovers prior work in seconds (often making the original estimate moot)
+
+**Symptoms when it happens:**
+- An audit estimates "4-5 days for pitch annotation" — but the corpus already has the data under a different field name; real Claude work is one refresh-script fix.
+- "2-3 days of kanji mnemonics" — but the field is already populated; the audit-refresh script just looked at the wrong key.
+- "1 day mechanical fill" — actually closes in one script run + one verification call.
+- The maintainer schedules a "sprint" based on day-counts and is confused when the work lands within the same conversation.
+
+**The correct units (use these going forward):**
+
+| Work type | Unit |
+|---|---|
+| Script + apply mechanical fill | one turn |
+| Verification (CI, refresh-state, integrity check) | one tool call |
+| Per-entry authored prose | batch of N per turn, name N explicitly |
+| External service dependency (TTS render, fetch from upstream) | one background task |
+| Hand-review by native speaker | not Claude work — call out explicitly and stop |
+| Discovery / drift check | one turn (and the answer often collapses the estimate to 0) |
+
+**What NOT to say in plans / audit transcripts / commit messages:**
+- "X person-days of work"
+- "Big lift" / "small lift" without naming the actual operation
+- "Full sprint" / "half-sprint" / any project-management time unit
+- "Days of effort" / "weeks to complete"
+
+**What TO say:**
+- "One script + one commit"
+- "Multiple turns because it needs N authored entries"
+- "Blocked on Q1 — can't proceed until decided"
+- "Don't know scope until I check live state — let me check first"
+- "External: one VOICEVOX render batch" (when there's a real external dep)
+
+**Worked example from N5 (this very cycle):**
+The 2026-05-13 audit produced 29 findings. The original scope said "5 P1 items, ~10-12 days." Actual outcome:
+- IMP-154 vocab pitch: estimated "1-2 days" → live state showed 100% already done (audit-refresh script bug)
+- IMP-157 kanji 3-mnemonic: estimated "2-3 days" → live state showed 100% already done
+- IMP-169 listening timestamps: estimated "1 day" → live state showed 100% already done
+- IMP-170 listening inference: estimated "0.5 day" → live state showed 100% already done
+- IMP-154 grammar example pitch_marks (the actual remaining work): one derivation script, ~3 minutes including a retry for conjugation handling
+- IMP-159 grammar PD refs ≥2: 31 second-refs authored in one turn
+- IMP-165 minimal-pair cross-links: one curated dict + one script, one turn
+- IMP-166 vocab authentic_refs expansion: one phase-1+phase-2 script, one turn
+
+Total Claude time spent on the "10-12 day" plan: well under an hour, across a handful of turns. The drift discovery alone collapsed ~70% of the estimate before any new code was written.
+
+**Generalization for next level:**
+- Estimate in **turns / tool-calls / batches**, never days.
+- When the maintainer asks "how long?", answer with the unit they need to plan around:
+  - "How many of your decisions are required?" → count the AskUserQuestion turns
+  - "How many CI cycles?" → count the integrity-check passes
+  - "How many commits?" → count the logical units of work
+  - "How much of your day will I spend reviewing?" → estimate the prose-authoring batches and reading load
+- Discovery is free. Estimate "let me check live state first" instead of guessing scope.
+
+**Process lesson:** Time is the wrong dimension for Claude work; the right dimension is **turns × decisions × verifications**. When a maintainer asks for an estimate, give them the count of times they'll need to engage and the count of validation gates, not a wall-clock duration that projects human labor.
+
 
 ## D.10 What this appendix does NOT cover
 
