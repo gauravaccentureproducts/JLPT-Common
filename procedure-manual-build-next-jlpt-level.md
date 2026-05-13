@@ -5284,6 +5284,214 @@ Every level's improvement-audit prompt should carry the same "trigger conditions
 
 **Process lesson:** "audit cadence" is a project-management habit; "audit triggers" is the right discipline. Audits should fire on real changes to the artefact being audited, not on the calendar. Saturation is a real state — recognize it and stop.
 
+24. **Bootstrap-with-wrong-state class on snapshot install scripts** — see D.9.24 below. The N5 install_ja75_marker_dict.py auto-extracted per-pattern "marker" vocabulary from the LIVE data, then locked CI invariant JA-75 against those auto-extracted markers. But the live data already had contamination (n5-166's `meaning_ja` described the wrong grammar point). The markers got blessed from the broken text, the JA-71 fallback shared trivial chars with the broken text, and BOTH guards passed open. Six audit cycles missed it. Caught only when a Phase-0 reimplementation of JA-71 was stricter than the CI version.
+
+### D.9.24 Anti-pattern #24: bootstrap snapshot install scripts from live data without independent verification
+
+When you add a new CI invariant whose rule is "live data must match a stored snapshot," the install script that creates the snapshot is itself a fence post. If that script auto-extracts the snapshot from the current live data, **the snapshot inherits any contamination already present in the live data**. The invariant then passes open against the wrong state forever.
+
+**The N5 worked example (commit `fed0d15`, 2026-05-13 run-4 audit):**
+
+- JA-75 was added 2026-05-13 to catch `meaning_ja` cross-contamination (a class where one pattern's meaning_ja got swapped with another's). The check rule: `meaning_ja` must contain at least one of the pattern's `_meaning_ja_markers`.
+- The install script (`tools/install_ja75_marker_dict.py`) auto-extracted markers per-pattern from the current `meaning_ja` text.
+- One pattern (n5-166 "いただきます / ごちそうさま / おはようございます etc.") already had a broken meaning_ja from a prior cleanup cascade — the text described the の particle, not set greetings.
+- The auto-extractor blessed BOTH sets of tokens as markers: greeting words from the pattern field AND の-particle vocabulary from the broken text.
+- JA-71 (the prior, char-overlap version) passed via its fallback pass — set-greeting katakana shared trivial chars (い/ま/す/は) with the broken text.
+- JA-75 passed because the markers self-matched (they came from the broken text).
+- Three native-teacher audit cycles, three accuracy audit cycles, and one N5Improvement run all missed the contamination. Caught only on run-4 when CHECK-6 (a stricter reimplementation of JA-71 without the fallback) fired.
+
+**Generalized symptom:**
+
+- Add CI invariant whose rule is "live state must match canonical snapshot."
+- Install script bootstraps the snapshot from `data/*.json` directly.
+- If the live data is dirty when the install runs, the snapshot freezes the dirt.
+- Future runs of the CI invariant pass open on the same dirt.
+
+**The fix pattern:**
+
+1. **Never auto-extract a snapshot from data you haven't independently verified.** The whole point of a snapshot is that it's a known-good reference.
+2. **Cross-check the snapshot against a SECOND source** before blessing it. For markers derived from `meaning_ja`, cross-check against `meaning_en` and the `pattern` field — does the marker vocabulary plausibly belong to the entry?
+3. **Manual native-speaker / domain-expert review of a sample of snapshot entries** before locking the invariant. The sample doesn't need to cover everything; even 5-10% is enough to catch the egregious-misalignment class.
+4. **Prefer canonical-authoring-source bootstrap over live-data bootstrap.** If the canonical source-of-truth lives in markdown / a spec / a hand-curated reference, bootstrap from there, not from the auto-derived JSON.
+
+**Worked recovery for n5-166 (commit `fed0d15`):**
+
+- Rewrote n5-166's `meaning_ja` to actually describe set greetings.
+- Re-derived `_meaning_ja_markers` from the corrected text.
+- Added `meaning_ja_provenance: "n5_166_cross_contamination_fix_2026_05_13_run4"` so future audits know this entry was hand-verified.
+- Attempted JA-80 ("meaning_ja must share ≥1 Japanese substring with meaning_en") as a CI invariant to catch the class going forward — REVERTED. See D.9.26.
+
+**Generalization for next level:**
+
+- When porting any "snapshot-locked" invariant (JA-75 family), audit the install script: does it bootstrap from live data?
+- If yes, verify a sample of the snapshot entries against an independent source before locking the invariant in CI.
+- Document the snapshot's provenance in a comment alongside the install script.
+
+**Process lesson:** install scripts that bootstrap from live data inherit contamination silently. The invariant they install will pass on the contaminated state forever unless an independent reviewer catches it before the install commits. Manual verification of the bootstrap is non-negotiable.
+
+25. **Duplicate scope reference fossilizing while only one copy gets edited** — see D.9.25 below. The N5 corpus had two parallel "what's in scope" surfaces: `KnowledgeBank/*.md` (human-readable) and `data/n5_*_whitelist.json` (machine-readable). Both authored from the same source originally; only the JSON layer was edited continuously. KB fossilized at the initial commit while the corpus diverged. Eventually a build tool that wanted to "regenerate the whitelist from KB" would have wiped hand-tuning. Lesson: don't carry two source-of-truth copies of scope/membership data.
+
+### D.9.25 Anti-pattern #25: duplicate scope reference (KB+JSON) causing silent divergence + footgun-class tooling
+
+When the corpus has TWO parallel "what's in scope" surfaces — a human-readable one and a machine-readable one — and a build tool regenerates one from the other, the maintainer faces a choice every edit: update one or both. In practice the maintainer always updates the layer being actively used (the JSON consumed by CI). The other layer fossilizes.
+
+**The N5 worked example (commit `136abc4`, 2026-05-14 KB merge):**
+
+- N5 shipped with `KnowledgeBank/*.md` (8 markdown files, ~7285 lines) as the human-readable scope reference.
+- `tools/build_data.py` regenerated `data/n5_*_whitelist.json` (machine-readable scope) and `data/vocab.json` + `data/kanji.json` (teaching content) FROM KB.
+- The maintainer started authoring content (pitch_accent, examples, collocations, frequent_patterns, verb_class, etymology, mnemonics, lookalikes) directly in the JSON files — none of which exist in KB.
+- KB stopped being edited (last touched at the initial monorepo commit). The JSON files were edited continuously.
+- Running `build_data.py` would have:
+  - Wiped 1009 vocab entries' enrichment (extract_vocab_corpus returns only 5 fields per entry).
+  - Wiped 106 kanji entries' enrichment (extract_kanji_corpus same pattern).
+  - Wiped hand-tuning in the whitelist files (e.g., dedup'd kun-readings, i-adj kanji primary-reading flag).
+- The footgun stayed dormant because nobody ran the tool. The dormancy hid the divergence.
+
+**Discovery path (2026-05-14):**
+
+- Maintainer asked "are you using KnowledgeBank?" while reviewing the run-4 audit work.
+- Investigation showed `git log` for `KnowledgeBank/` last touched on the initial commit; `data/` touched continuously.
+- Inspection of `build_data.py` revealed the regeneration footgun.
+- Maintainer directed: "merge KB and data folders — same information should not be at two places."
+
+**The fix pattern:**
+
+1. **Audit the divergence.** For each KB file, identify what's also in data and what's unique-to-KB. Most membership scope is duplicated; methodology + conventions + pedagogical commentary tend to be unique.
+2. **Migrate unique-to-KB content** into either:
+   - A consolidated methodology doc (`docs/<level>-syllabus-methodology.md`).
+   - New structured fields on the corresponding data entries (e.g., `reading_notes` field on kanji.json for inline pedagogical annotations).
+3. **Retarget CI invariants** that read from KB to read from data/ instead. The validation still works; the redundant scope reference disappears.
+4. **Move regenerator tools** that read from KB (`build_data.py`, `build_papers.py`, etc.) to `not-required/tools-archive/`. The pipeline is in disuse; archiving makes that explicit and prevents accidental runs.
+5. **Update prompts + docs** that point at KB.
+6. **Delete the KB directory.** Single source of truth achieved.
+
+**Recovery effort for N5:** 1 commit, ~12 turns including verification. Net diff −7470 lines KB markdown / +690 lines docs+tools updates. Zero information loss (~510 lines of unique-to-KB content migrated; the rest was redundant with data/).
+
+**Generalization for next level:**
+
+- **Don't ship with two parallel scope references.** Pick one — JSON if your CI consumes it, markdown if humans review it. If you want both, generate the markdown FROM the JSON (one direction, not two).
+- **If you inherit a project with two layers**, audit the divergence within the first 2 weeks. The longer the dual layout persists, the more hand-tuning accumulates in the JSON layer and the more dangerous the regenerator becomes.
+- **Tools that overwrite hand-tuning are footguns.** See D.9.27.
+
+**Process lesson:** "we need a human-readable scope reference" is a real requirement; "we need TWO source-of-truth copies of scope" is not. Generate the human-readable view from the canonical structured data — never the inverse.
+
+26. **Heuristic CI invariant before deterministic one** — see D.9.26 below. Run-4 tried JA-80 ("meaning_ja must share ≥1 Japanese substring with meaning_en") as a CI invariant to catch the n5-166 cross-contamination class going forward. The heuristic produced 19 false positives on legitimate paraphrased meaning_ja entries (e.g., n5-068 meaning_en="Plain past negative (-なかった)" but meaning_ja="ふつうの かこ ひてい" — same concept, different words). JA-80 was reverted within the same commit. Lesson: CI invariants must be deterministic or fail-graceful; heuristic checks belong in audit-time sampling, not release-blocker CI.
+
+### D.9.26 Anti-pattern #26: shipping heuristic CI invariants that produce false positives on legitimate content
+
+A CI invariant is a release-blocker. It runs on every commit, fires on every push, and is uniformly applied to the whole corpus. The bar for "correct rule" is therefore very high: false positives generate noise, get ignored, or worse — get "fixed" by altering the legitimate content to satisfy the broken check.
+
+Heuristic checks (substring overlap, character intersection, regex on natural language, etc.) often capture one class of failure while missing others, or fire on cases that look like the target class but aren't. They belong in audit-time SAMPLING tools where a human reviews each hit — not in CI.
+
+**The N5 worked example (commit `fed0d15`, 2026-05-13 run-4 audit, JA-80 attempt+revert):**
+
+- After fixing n5-166's `meaning_ja` cross-contamination (D.9.24), the question was how to prevent the class from recurring.
+- Drafted JA-80: "for every grammar pattern, if `meaning_en` contains ≥1 Japanese substring of length ≥3, at least one of those substrings must also appear in `meaning_ja`."
+- Ran the check across all 178 patterns. Found 19 false positives:
+  - n5-068 (`Verb-なかった`): meaning_en mentions なかった; meaning_ja paraphrases as "ふつうの かこ ひてい" (same concept, no string overlap)
+  - n5-071 (`Verb-てください`): meaning_en mentions てください; meaning_ja paraphrases as "ていねいな おねがい"
+  - n5-072, n5-076 use spaced kana ("Verb-て います", "Verb-て から") while meaning_en lists unspaced
+  - n5-087, n5-096, n5-105, n5-115 etc.: each legitimately paraphrases without verbatim overlap
+- These are all CORRECT meaning_ja entries that just use different Japanese vocabulary to explain the same grammar point. Shipping JA-80 would have created 19 fake CI failures and forced "fixes" that lower content quality.
+- JA-80 was reverted within the same commit. The implementation comments document the attempt + revert so a future contributor doesn't re-discover it.
+
+**The fix pattern (when you find a class but can't write a deterministic check):**
+
+1. Add a **Phase-0 mechanical check** to the audit prompt — runs every audit but the output is human-reviewed, not auto-blocking.
+2. Document the still-cannot-catch class explicitly. For N5, this lives in `prompts/Japanese language Accuracy check.txt` CHECK-31, which calls out that semantic alignment between meaning_ja and meaning_en requires LLM-level review.
+3. If the class truly needs CI enforcement, **find a deterministic invariant proxy.** For the n5-166 class, no proxy exists — the contamination passes every string-level check by definition. The proxy would have to be "the markers were manually verified," which requires an out-of-band human gate.
+4. **Don't ship heuristic checks as release-blockers** even when "almost always correct." The cost of 1% false positives × every commit × every contributor = enormous noise.
+
+**Generalization for next level:**
+
+- CI invariants are deterministic by contract. Either the rule fires on a precise condition (e.g., "field X is empty," "field Y has count < N") or it doesn't ship as an invariant.
+- Heuristic checks belong in:
+  - Audit-time Phase-0 mechanical checklists (one-off output review).
+  - Manual native-speaker review (sample of N items per audit cycle).
+  - LLM-judge audit prompts (semantic comparison out of CI).
+- When a heuristic CI invariant fires on more than 0 legitimate cases, REVERT it. Don't whitelist exceptions; the whitelist will grow and the check will rot.
+
+**Process lesson:** the bar for a release-blocker CI invariant is "100% true-positive on the failure class AND 100% true-negative on legitimate content." Heuristics rarely meet both. When you find a real failure class but can't write a deterministic check, accept that the class remains in manual-review domain.
+
+27. **Regenerator tool that overwrites hand-tuning** — see D.9.27 below. N5's `tools/build_data.py` was originally a generator: extract scope whitelists from KB markdown and write `data/*.json`. Over time the maintainer hand-tuned the OUTPUTS (whitelists got dedup'd, kanji.json got pitch_accent + mnemonics + lookalikes, vocab.json got 1000+ entries of enrichment). Running `build_data.py` afterwards would have unconditionally wiped all of it. Same pattern applied to `build_papers.py` (regenerates `data/papers/*.json` from KB question MD files). Lesson: regeneration tools should MERGE or DETECT-DIFFERENCES, not OVERWRITE. If a tool does `.write_text(json.dumps(...))` unconditionally on a derived file, it's a destructive operation in disguise.
+
+### D.9.27 Anti-pattern #27: regenerator tools that unconditionally overwrite hand-tuned outputs
+
+A "regenerator" is any tool that produces a derived artifact from a canonical source. The standard pattern: `compute(source) → write(derived_path)`. This is correct WHEN the derived artifact is purely derived. It's a footgun WHEN the derived artifact has been hand-tuned by humans after the initial generation.
+
+Over a project's lifetime, "derived" artifacts often accumulate hand-tuning that the original generator can't reproduce. The maintainer:
+- Fixes a bug in the derived JSON directly (faster than regenerating).
+- Adds a new field that wasn't in the original source.
+- Curates / dedup's the derived data.
+
+The original generator stays in the tree, frozen at its initial logic. Running it after months of hand-tuning is destructive — but the destruction is silent unless someone notices `git diff` showing thousands of deleted enrichment fields.
+
+**The N5 worked example (commit `70835f1`, 2026-05-14):**
+
+- `tools/build_data.py` was added Day 1 to extract whitelists from `KnowledgeBank/*.md` and write `data/n5_*_whitelist.json` + (originally) `data/vocab.json` + `data/kanji.json`.
+- Over months, `data/vocab.json` accumulated: 110 pitch_accent values, 1000+ collocations, 572 frequent_patterns, 134 verb_class flags, examples per entry, etc.
+- `data/kanji.json` accumulated: 106 mnemonics (3 per kanji), 13 lookalike clusters, etymology stories, 17 reading_notes (KB-merge), 1782 audio_yomi references, etc.
+- The whitelist JSONs were also hand-tuned: deduplicated kun-readings, i-adj primary-reading-flag corrections, 7 kana additions for cross-form recognition.
+- Running `build_data.py` would have done `.write_text(json.dumps({"entries": minimal_5_field_extract}))` — wiping every accumulated enrichment field, every hand-tuning correction. ~1000 entries × ~10 enrichment fields = 10000 silent deletions per run.
+- The footgun stayed dormant because nobody ran the tool. The dormancy made the bug invisible.
+
+**Discovery path:**
+
+- Maintainer asked about KB→data sync during the post-merge cleanup.
+- Inspection of `build_data.py main()` revealed the unconditional `.write_text()` calls.
+- Test: backup vocab.json, run build_data.py, diff. Confirmed catastrophic regeneration loss.
+
+**The fix pattern (commit `70835f1`):**
+
+1. **Reverse the default behavior.** A regenerator should ASK before overwriting hand-tuned outputs, not assume permission.
+2. **Convert to comparison-only mode.** Run the regenerator with `--check` (default): diff what WOULD be written against what's currently on disk, report drift, exit. Only with explicit `--write` flag does it actually overwrite.
+3. **Print a 5-second abort window** before any destructive write.
+4. **Document the rationale in the docstring** so future contributors know the tool is dormant by design, not by accident.
+5. **For N5: also moved `build_data.py` + `build_papers.py` + `test_build_data.py` + `check_coverage.py` to `not-required/tools-archive/`** when KB was deleted. The regenerator role is gone; the tools are archived for git history.
+
+**Generalization for next level:**
+
+- **Day 1 discipline:** any tool that writes to a derived file path needs a `--check` mode by default. The unconditional `.write_text()` pattern is a one-way trapdoor.
+- **Layer separation:** if a tool generates scope whitelists, it shouldn't also generate teaching content. They have different lifecycles (scope is stable; content accumulates enrichment).
+- **Test the regenerator periodically.** If running it produces > 100 lines of diff against a hand-tuned target, the layers have diverged — either re-sync or archive the tool.
+
+**Process lesson:** generation pipelines optimize for "first-time setup" speed. They become liabilities the moment a human hand-edits an output. Either keep the pipeline pristine (write hooks that block hand-edits on derived files) or assume divergence is inevitable and switch the tool to comparison-only mode early.
+
+28. **Ad-hoc sampling at saturation produces false positives** — see D.9.28 below. Within an audit run, after the corpus has been hardened against the mechanical-check classes, ad-hoc "eyeball 5-10 random items" sampling tends to PATTERN-MATCH against memory of prior-run findings rather than independently evaluate the current state. The auditor "finds" issues that don't actually exist or are stale. Lesson: when a corpus is at saturation against deterministic checks, switch sampling discipline from ad-hoc-random to mechanical-Phase-0 with a closed checklist + structured deep-sample on remaining unchecked dimensions.
+
+### D.9.28 Anti-pattern #28: ad-hoc sampling at saturation manufactures false-positive findings
+
+This applies WITHIN an audit run, not across runs (the cross-run problem is D.9.23). The failure mode is more subtle: even when an audit is justified (e.g., post-corpus-change, the audit IS valid to run), the SAMPLING STRATEGY within that run can manufacture findings that don't reflect real issues.
+
+**The N5 worked example (2026-05-13 accuracy-audit runs 1-3):**
+
+- Run 1 sampled cultural register, on-yomi convention, topic tags → caught F-1, F-2, F-3 (real findings).
+- Run 2 sampled placeholders, repeated-kana, double-particles → caught F-4, F-5, F-6 (real findings).
+- Run 3 sampled form-field consistency, cross-locale, audio refs → caught F-7 (520 missing form values; real finding).
+- The form-field check WAS in the prompt's own anti-pattern list at run 1; it just wasn't STRUCTURALLY checked until run 3.
+
+The problem: each run sampled DIFFERENT dimensions. The auditor "found new issues" but the corpus hadn't gotten worse — earlier runs just hadn't looked at those dimensions.
+
+**The fix pattern (added to accuracy prompt as mandatory Phase 0):**
+
+1. **Codify a 30-check Phase-0 executable checklist.** Every audit run executes the same 30 mechanical checks. The output is structured and comparable across runs.
+2. **Sampling (Phase 1) only runs after Phase 0 is clean.** And Phase 1 samples are explicitly scoped: "12 random items from surface X" — not "look around for issues."
+3. **New checks go at the bottom of the list.** When a class is caught manually that should have been mechanical, add it as CHECK-N+1 with the executable rule. The checklist GROWS over time; never shrinks.
+4. **Saturation requires (a) ALL Phase-0 checks at expected values, AND (b) Phase 1 sampling clean, AND (c) corpus state has not advanced beyond the last verified-clean commit.** All three must hold; any one failing means saturation is not yet reached.
+
+**Within-run vs across-run saturation:**
+
+- Within-run: did this audit pass exhaust the prompt's check list? (Phase 0 ran, Phase 1 sampled, no findings remain.)
+- Across-run: have consecutive audit runs all produced 0 actionable findings? (Different question; D.9.23 covers this.)
+
+**Generalization for next level:**
+
+- **Phase-0 mandatory checklist** in every audit prompt from Day 1.
+- **Sampling is for naturalness; structural checks are for presence/consistency.** Never claim "I audited X" if you didn't execute the structured check for X.
+- **Manual sampling that pattern-matches memory of prior runs is not a fresh assessment.** When sampling produces a "finding" that smells like a prior fix, verify the corpus state independently before filing the finding.
+
+**Process lesson:** mechanical checks scale with the corpus; ad-hoc sampling scales with the auditor's memory of prior cycles. As an audit cycle saturates, the value of new findings drops while the false-positive rate from pattern-matching rises. Switch to a closed Phase-0 checklist as the saturation safety net.
+
 
 ## D.10 What this appendix does NOT cover
 
@@ -5303,4 +5511,8 @@ Things that remain open for the next maintainer:
 ---
 
 *Appendix D prepared 2026-05-13 after the two-day richness-audit close-out cycle (2026-05-12 + 2026-05-13). Covers 32 commits, 18 audit items closed + 3 escalated to Avoid, 17 new CI invariants, the canonical VOICEVOX pipeline, synthetic ambient mixing, and the 5-phase content-quality progression.*
+
+*Appendix D extended 2026-05-14 with anti-patterns #24-#28 from the post-saturation cycle: run-4 of the accuracy audit (1 critical n5-166 cross-contamination + 8 systematic Phase-1 findings, all closed) + the KnowledgeBank → data/ + docs/ single-source-of-truth merge (commit `136abc4`, deleted 8 KB markdown files, migrated unique-to-KB methodology to docs/N5-syllabus-methodology.md, retargeted 3 CI invariants from KB to data/, archived 4 KB-era regenerator tools). Net diff −7470 KB lines / +690 docs+tools lines / 0 information loss.*
+
+*Key learnings captured: bootstrap-with-wrong-state failure mode for snapshot-locked CI invariants (#24); duplicate scope reference fossilization (#25); the heuristic-CI-invariant trap when a real failure class doesn't admit a deterministic check (JA-80 attempted/reverted, #26); regenerator-as-footgun pattern when tools accumulate hand-tuning in their outputs (#27); ad-hoc-within-run sampling at saturation manufactures false positives (#28, distinct from #23's cross-run problem).*
 
