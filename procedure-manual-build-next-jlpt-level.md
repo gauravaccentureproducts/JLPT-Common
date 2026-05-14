@@ -1192,6 +1192,41 @@ Grammar examples in `data/grammar.json` can carry a `form` field whose value ren
 
 **Anti-corollary:** the same pattern applies to ANY optional UI-facing badge/tag field that has visible fallback rendering. Audit list to check: `usage_role`, `register`, `tier`, `format_type`, `provenance` flags — anywhere a partially-populated field leaks an empty-state visual to the UI.
 
+#### 3.2.35 Don't fill grammar example slots with canned boilerplate sentences without verifying pattern-relevance (CRITICAL — N5 grammar-corpus audit 2026-05-14)
+
+During an authoring pass on the N5 grammar corpus (Phase 1 + 2 of the 2026-05-14 cleanup), an audit discovered that a small set of canned sentences had been copy-pasted into example slots across many patterns without verifying whether the example demonstrated the target pattern. Surfaced by user report: the と-particle grammar-detail page showed examples that didn't contain と as a particle ("じぶんで しゅくだいを します。" uses で; "父に とけいを もらいました。" uses に — neither demonstrates と).
+
+**Scope of the bug (worst case, pre-cleanup):**
+
+- `"あなたは がくせいですか。"` appeared in **21** grammar patterns
+- `"あなたは どなたですか。"` appeared in **18** patterns
+- `"どうして 来ませんでしたか。―あたまが いたかったからです。"` appeared in **17** patterns
+- 14 boilerplate sentences each appeared in 8–14 patterns
+- 232 example slots ultimately needed replacement across ~85 of the 178 N5 grammar patterns (48% of the corpus).
+
+**Why this is CRITICAL severity (not just a polish item):**
+
+- The example slots are the LEARNER-FACING demonstration of the grammar pattern. If the example doesn't use the pattern's marker, the learner doesn't learn the pattern from that surface.
+- Pedagogically misleading: a learner who studies と-particle from the と-detail page and sees じぶんで しゅくだい... + 父に とけい... will form NO mental model of と-particle usage from those slots.
+- The bug compounds: the same boilerplate sentence at indices [5][6] across 10+ patterns means the learner sees the SAME unrelated sentence on 10+ different study pages — a strong negative signal about content quality.
+
+**Root cause:** at some authoring batch, the slots at indices [4]/[5]/[6] of many particle and conjugation patterns were bulk-filled with a small set of "filler" sentences as boilerplate, without per-pattern checking. Likely candidates: a tool that auto-generated examples by sampling from a small fixed pool; a hand-fill batch that lost track of which pattern was being authored.
+
+**Fix policy:**
+
+- Every example slot must contain a sentence that demonstrates the target pattern's marker. Verifiable by: does the example contain the literal pattern string (for compound markers like 〜について), OR does the marker appear as a particle/morpheme (for single-char particles like と / を / に)?
+- The pattern's `form` tag on each example must match the example's actual conjugation/usage state.
+- Cross-pattern reuse of an example sentence is allowed BUT capped — a single canonical sentence appearing in 10+ patterns is the boilerplate-leak signal.
+- Within-pattern reuse (same sentence at two indices in one pattern) is forbidden; wastes a slot.
+
+**CI gate added (JA-81, 2026-05-14):** "No grammar example sentence repeated in 10+ patterns (boilerplate-leak guard)." Locks the post-cleanup state. The threshold is 10 — well above the level of legitimate canonical reuse (e.g., `"わたしは がくせいです。"` appears in ~9 basic-copula patterns as the canonical です example, all relevant), well below the original boilerplate-leak levels (14–21).
+
+**Audit infrastructure preserved at:** `not-required/tools-archive/audit_grammar_example_relevance_v2_2026_05_14.py` — single-char particle disambiguation (particle vs noun-internal substring), tilde-separator handling for "から〜まで", parenthetical-reading expansion for "何（なに／なん）", paren-readings → alternatives expansion. Re-run after any large grammar-corpus authoring pass.
+
+**Anti-corollary:** the same anti-pattern applies to vocab.json and questions.json — any data field where bulk-authored slots could be filled with placeholder/template content without per-slot relevance verification. Audit list: vocab.json `examples[]` array, questions.json `rationale_en`/`rationale_hi` fields, reading.json `comprehension_questions[]`, listening.json `script_ja`. Each should be spot-checked for the "same sentence repeated across N entries" smell.
+
+**Bumper-sticker form:** "Every example slot earns its slot by demonstrating the target marker. A boilerplate sentence in the wrong pattern teaches nothing."
+
 #### 3.2.27 Don't expect `align-items: center` on a flex parent to center text inside a min-height-enforced child (MEDIUM — N5 menu-bar centering 2026-05-10)
 
 The N5 header had `<nav class="primary-nav">` with `display: flex; align-items: center;` containing `<a>` links. Each link was bumped to `min-height: 44px` by the global tap-target accessibility rule. With `display: inline` (the `<a>` default), the 44px-tall link box held the text on the BASELINE — visually below the geometric center of the 44px box. The whole `<nav>` was centered in the 56px header band, but the *text inside each link* sat low.
