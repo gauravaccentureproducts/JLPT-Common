@@ -5870,3 +5870,288 @@ These strong sections collectively constituted roughly 30-40% of the manual's va
 
 *Appendix E migrated 2026-05-14 from a standalone `procedure-manual-review-issues.md` file. The original review was conducted 2026-05-01 with a zero-interaction one-shot lens. Issue dispositions are tracked in §18 of this manual; the full original text above is preserved for verification of each disposition against the original concern.*
 
+---
+
+# Appendix F — Content audit saturation methodology (2026-05-15 N5 session)
+
+This appendix captures the methodology from the 2026-05-15 audit-fix-
+iterate cycle on N5 — **27 audit rounds, 2,061 content fixes, 9 new CI
+invariants (JA-81→JA-90), final state 93/93 invariants green**.
+
+For Nx level builders: apply this methodology AFTER the first authoring
+pass converges (~Phase 4 in §C.14's ordering), not before. The cycle
+takes ~3-5 sessions; expect it to surface ~1,500-2,500 fixes if the
+LLM-authored content was templated similarly to N5's was.
+
+## F.1 The audit-fix-iterate cycle (binding methodology)
+
+**One cycle = one audit class, iterated until 0 real findings.**
+
+```
+1. Author audit checker (e.g., not-required/tools-archive/audit_XX.py)
+2. Run checker → produce finding list
+3. Triage:
+   - REAL: items to fix
+   - FALSE-POSITIVE: items to suppress in checker (document FP)
+4. Author fix script (not-required/tools-archive/fix_XX.py)
+5. Backup the target data file (data/X.json.bak_YYYY_MM_DD_purpose)
+6. Apply fix script
+7. Run CI (tools/check_content_integrity.py) — must stay green
+8. Re-run checker → confirm 0 real findings
+9. If new findings emerge → GOTO step 4 with a new round (Round 2)
+10. When converged, write CI invariant JA-NN to lock the gain
+11. Commit + push (one cycle = one commit)
+```
+
+**Saturation definition:** a checker is SATURATED when ALL of:
+- It returns 0 real findings on the live corpus.
+- Every documented false-positive class is suppressed in the checker.
+- A CI invariant locks the floor.
+- A second-pass run from a fresh seed produces no new findings.
+
+Anti-pattern: declaring saturation after one clean run without the
+fresh-seed re-run. The 2026-05-14 vocab audit caught a NEW template
+(`Xを 見ました`) only after the structural audit had already declared
+clean — because the checker was too narrow.
+
+## F.2 Template-leak anti-pattern family — predict these on Nx
+
+The 2026-05-15 N5 session caught **6 distinct templated-example
+patterns** across vocab/grammar/listening/papers — totaling ~860 fixes.
+For Nx level: build checkers for these BEFORE the first audit pass.
+
+| Template | What it looks like | Where caught |
+|----------|-------------------|--------------|
+| **T1: object-saw** | `Xを 見ました。` / "I saw X." | 108 vocab entries at example[1] |
+| **T2: doko-non-loc** | `あの Xは どこですか。` / "Where is that X?" with X = non-location (time word, person, abstract noun → nonsense English) | 111 vocab + 5 grammar |
+| **T3: kore-bare** | `これは Xです。` / `あれは Xです。` on entries with 3+ examples, NOT for demonstrative-pronoun entries themselves | 178 vocab entries |
+| **T4: aisatsu-non-greeting** | `「X」と あいさつしました。` where X is not a greeting (えーと, いいえ, ええ — filler words misclassified as greetings) | 12 vocab entries |
+| **T5: every-day-can-do** | `毎日 X ことが できます。` "I can VERB every day" — often nonsense for non-volitional verbs (こまる/くもる/おちる) | 28 vocab verb entries |
+| **T6: tomorrow-plan** | `あした X つもりです。` "I plan to VERB tomorrow" — wrong for intransitive verbs (はじまる/しまる/おちる) | 30 vocab verb entries |
+| **T7: bare-article-EN** | `Xが あります。` / "There is X." (singular common noun, no article) — animacy bug if X is animate | 74 vocab entries |
+| **T8: verb人がいます** | `<verb-dict>人が います。` / "There is a person who to <verb>" — infinitive in relative clause | 24 vocab verb entries |
+
+For each, the checker regex is documented in
+`N5/prompts/Japanese language Accuracy check.txt` §§A18-A45. **Copy these
+regexes verbatim to Nx and run before authoring fixes** — saves 50-90%
+of the iteration cost.
+
+## F.3 False-positive catalog discipline (FP-1 through FP-15)
+
+Whenever an audit checker over-flags, document the FP class in the
+audit prompt before suppressing in code. This catalog accumulates as a
+permanent reference. N5's FP list (FP-1 → FP-15) is in
+`N5/prompts/Japanese language Accuracy check.txt`.
+
+**Recurring FP classes Nx will hit:**
+
+| FP | Why it false-flags | Mitigation |
+|----|--------------------|------------|
+| ウ音便 contraction (o+u→ō spelling stays as -ou) | Looks half-applied but is correct | Vowel-before-u check |
+| Past-marker mid-sentence (relative clause) | Naive end-of-sentence check misses inside-clause | Allow non-sentence-end past markers |
+| Mixed kanji/kana orthography | Real style issue, not accuracy bug | Surface as style note |
+| Cross-pattern reuse below threshold-10 | Below JA-81 cap is legitimate canonical reuse | Threshold ≥10 |
+| Counter rendaku (ひき→びき, はい→ぱい) | Phonological alternation, not absence | Rendaku alternant set |
+| Compound -くる verbs (もってくる → もってきて) | Auxiliary くる conjugates; stem extraction misses | Compound-くる stem expansion |
+| Demonstrative-pronoun entries' bare 'これは X' template | THE canonical demonstration of these headwords | Section/pos exception |
+| Parenthetical annotations after translations | "(polite)", "(formal)" trailing the sentence | Strip `\s*\([^)]*\)\s*$` before terminator check |
+| authentic.json reading is FULL phrase | Multi-word signage like 'コーヒー さんびゃくごじゅうえん' | Apply check only when ja == single vocab form |
+| English rationales lack JA char overlap | Translation explanations naturally don't share chars | Manual triage for misalignment |
+| ひとりでに ("by oneself") | Fixed compound adverb, not particle stack | `(?<!ひとり)でに` lookbehind |
+| 〜いです IS correct polite-i-adj | NOT the wrong くて conjunction | Exclude `で(?=す)` from triggers |
+| 倍 (ばい) | Multiplier suffix, not noun-counter | Exclude from counter pairing scan |
+| i-adj inflected forms (くて/く/かった) | Still demonstrate the headword | Strip final い for stem match |
+| ぜひ/ただ + neutral declarative | Pedagogical-quality, not grammar bug | Treat as "should improve" only |
+
+## F.4 Schema-type discrimination across question-shaped corpora
+
+Question-shaped JSON files (questions.json, drills_auto.json,
+papers/*/paper-*.json) have multiple `type` values that use DIFFERENT
+field sets. A blanket required-fields check will false-flag legitimate
+variants.
+
+```python
+# questions.json
+if q['type'] == 'mcq':
+    # uses question_ja + choices + correctAnswer + distractor_explanations
+elif q['type'] == 'sentence_order':
+    # uses tiles + correctOrder (NO question_ja, NO correctAnswer)
+
+# drills_auto.json
+if q['type'] == 'cloze':
+    # has stem (Japanese with blank) + correctAnswer
+elif q['type'] == 'production':
+    # has prompt_en (EN→JA typing); NO stem
+```
+
+For Nx: build the audit checker with `type` branching from the start.
+N5's mega-audit checker (not-required/tools-archive/audit_mega.py) is
+the reference implementation.
+
+## F.5 Locale-parity gaps — predict and lock
+
+The most reliable bulk-fix class is "EN populated, HI empty" (or
+vice versa). Audit each pair:
+
+| File | EN field | HI field | CI gate |
+|------|----------|----------|---------|
+| reading.json questions | explanation_en | explanation_hi | JA-85 |
+| authentic.json items | context | context_hi | JA-86 |
+| questions.json mcq | distractor_explanations | distractor_explanations_hi | JA-86 |
+| papers/dokkai questions | rationale | rationale_hi | JA-85 |
+| vocab.json entries | gloss | gloss_hi | (covered by JA-39 set membership) |
+
+**Expected scale at Nx (extrapolating from N5):** ~150-400 missing
+HI entries. Author them en masse using a single fix script with
+provenance `llm_curated` (truthful — not native-Hindi-reviewed).
+Add CI gate immediately to lock the gain.
+
+## F.6 Native-teacher 4-phase audit methodology
+
+After structural saturation (template-leak, locale parity, schema
+shape), apply the deeper linguistic pass:
+
+### Phase A — Programmatic deep-linguistic checks (6+ categories)
+
+Build regex/lookup checkers for:
+- L1: Counter-noun semantic pairing (本→cylindrical, 枚→flat, 冊→books, 個→general, 人→people, 匹→small animals, 頭→large animals, 台→machines, 杯→liquid cupfuls, 足→footwear)
+- L2: Adjective conjugation (i-adj uses くて/くない; な-adj uses で/じゃない)
+- L3: Time-particle accuracy (毎日/毎週/今日 take NO particle)
+- L4: Discourse register coherence (no mixed plain だ + polite です)
+- L5: Verb-group conjugation correctness
+- L6: Honorific お/ご prefix on appropriate noun class
+
+### Phase B — Sample-based deep review + programmatic extension
+
+Random-sample ~80 sentences across corpora. Per-sentence native-
+teacher judgment. Whatever specific bug you spot → extend the
+programmatic scan to all corpora.
+
+### Phase C — JLPT-format authenticity (papers only)
+
+Mondai distribution, stem-format conformance, distractor pedagogy.
+0 expected findings if papers were authored from real JLPT samples.
+
+### Phase D — Best-effort review of "human-only" dimensions
+
+Pitch accent, idiomatic naturalness, register coherence in dialogue,
+audio-script alignment. Document confidence-low items rather than
+auto-fixing.
+
+**Expected total at Nx:** ~100-300 fixes across all 4 phases.
+
+## F.7 External-reference cross-check pattern (pitch accent example)
+
+For dimensions where my (LLM) confidence is genuinely low (pitch
+accent drop position, prosody, regional accent variation), use an
+external authoritative dataset to cross-validate.
+
+**Pattern (added 2026-05-15 from pitch-accent reconciliation):**
+1. Locate a permissively-licensed reference dataset (e.g., kanjium
+   pitch-accent for Japanese; UD treebanks for syntactic features).
+2. Fetch + version-pin to a specific upstream commit SHA.
+3. Save to `data/<level>_<feature>_reference.json` with full `_meta`
+   block (source, license, downloaded_at, consumers,
+   regenerate_with).
+4. Build a refresh tool in `tools/` (persistent) for re-fetching.
+5. Build a one-shot reconciliation script in
+   `not-required/tools-archive/`. For each corpus entry, classify:
+   - MATCH (reference exists, value agrees) → confidence='high'
+   - DISAGREE (reference differs) → fix to reference,
+     confidence='high', source=ref
+   - AMBIGUOUS (reference has alternates) → keep current if listed,
+     confidence='medium'
+   - NOT_FOUND (not in reference) → keep current,
+     confidence='unverified'
+6. Add a `confidence: 'high'|'medium'|'low'|'unverified'` field to
+   every entry (Option C — transparency without data change).
+7. Add CI invariant JA-NN that enforces:
+   `(confidence='high' AND value == reference[entry])
+   OR confidence in {'medium', 'low', 'unverified'}`
+
+**Why this works:** for the ~95% of entries the reference covers,
+gives high-confidence values. For the long-tail ~5%, marks them
+explicitly `'unverified'` so future native-human review can
+prioritize.
+
+For Nx: do this in cycle 4 or 5 (after structural + linguistic
+saturation). Estimated effort: 1-2 sessions, ~50-300 fixes.
+
+## F.8 Audit-coverage disclosure pattern
+
+After audit saturation, commit a transparent disclosure document:
+`docs/AUDIT-COVERAGE-YYYY-MM-DD.md`.
+
+**Required sections:**
+1. Auditor persona (who, with caveats about non-native limitations)
+2. Coverage matrix — what was programmatically validated vs sampled
+   vs unchecked
+3. Confidence levels per dimension
+4. Items deferred to native-human review (with rationale per item)
+5. CI invariants added (JA-NN list with what each locks)
+
+**Why this matters:** the project's quality contract becomes
+explicit. Future contributors (or institutional adopters) can see
+what's verified vs what still needs human review, without having to
+re-discover gaps.
+
+N5 reference: `N5/docs/AUDIT-COVERAGE-2026-05-15.md` and
+`N5/docs/AUDIT-REPORT-NATIVE-TEACHER-2026-05-15.md`.
+
+## F.9 CI invariant growth pattern — lock every gain
+
+Every audit cycle that produces ≥1 fix MUST add a CI invariant
+locking the cleanup. Without this, future authoring batches re-
+introduce the same anti-pattern. N5's session went 81 → 92
+invariants (+11 net) across 27 audit rounds; this is the right
+ratio.
+
+**Invariant naming convention:** `JA-NN` where NN is monotonically
+increasing. Embed the audit pass date in the description string for
+audit-trail. Use a single check function with multiple LOCK sub-
+patterns when one audit cycle removes multiple distinct anti-
+patterns (N5 JA-89 has 5 sub-locks for the native-teacher pass).
+
+## F.10 N5 kanji whitelist authoring guardrail — extends to any Nx
+
+When AUTHORING replacement content in fix scripts, pre-validate
+against the level's kanji whitelist. Common LLM-source kanji that
+LOOK N5-or-lower but actually aren't (N5 examples, but the pattern
+applies at every level):
+
+```
+公 園 多 少 物 魚 兄 弟 姉 妹 牛 茶 米 肉 元 漢 達 始 教 仕 事 用
+体 切 海 静 玄 関 音 字 開 部 屋 家 京 紙 朝 昼 夜 晩 雪 鳥 犬 猫
+馬 春 夏 秋 冬 早 帰 飛 都 兄 回 色 光 走 玉 枚 知 引 好
+```
+
+**Rule of thumb:** if unsure, use kana. Kana NEVER trips the JA-13
+(or analogous) out-of-scope-kanji invariant. The N5 vocab Round 4
+batch initially shipped 38 OOS-kanji uses that had to be reverted
+to kana on a second pass — pre-validation in the fix script would
+have caught these before the apply step.
+
+**For Nx:** build the OOS-kanji list for level X before the first
+authoring batch. Embed it in fix scripts as a pre-check.
+
+## F.11 What this appendix does NOT cover
+
+- **Native-human review workflow** — what to hand to a native
+  speaker, how to prioritize, what feedback structure to expect.
+  Belongs in a future Appendix when funded.
+- **Multi-level cross-corpus consistency** — when Nx ships, the
+  same word may appear in N5/N4/Nx vocab with different attestation.
+  Reconciliation policy TBD.
+- **Audio re-render cost when content changes** — N5 ducks this
+  question by not re-rendering after content fixes. For Nx, an
+  audio-script consistency check + selective re-render policy is
+  needed.
+- **Hindi native-review process** — all Hindi content in N5 is
+  LLM-curated. A native-Hindi reviewer round is queued (IMP-101)
+  but not yet scheduled.
+
+---
+
+*Appendix F added 2026-05-15 capturing the saturation methodology
+from the N5 audit cycle (27 rounds, 2,061 fixes, JA-81→JA-90).*
+
