@@ -6134,7 +6134,94 @@ have caught these before the apply step.
 **For Nx:** build the OOS-kanji list for level X before the first
 authoring batch. Embed it in fix scripts as a pre-check.
 
-## F.11 What this appendix does NOT cover
+## F.12 TTS pipeline pitfall — bunsetsu spaces drop particles via OpenJTalk pause boundaries (2026-05-14 N5)
+
+**Failure class:** the audio renderer for grammar examples
+(`tools/build_audio_voicevox.py`) passed the displayed `ja` field
+directly to VOICEVOX without any text normalization. The displayed
+text uses JLPT-textbook bunsetsu spaces for learner readability
+(e.g., `コーヒーと こうちゃを かいました。`). VOICEVOX uses OpenJTalk
+under the hood for prosody analysis; OpenJTalk treats each space as
+a hard token boundary and inserts an inter-bunsetsu pause. The
+particle trailing a bunsetsu (e.g., the を at the end of `こうちゃを`)
+gets stress-weakened or devoiced at the pause boundary, making it
+**inaudible** to learners even though VOICEVOX correctly identifies
+the particle's /o/ phoneme in its accent_phrases response.
+
+**Symptoms:**
+
+- Display reads: `コーヒーと こうちゃを かいました。`
+- Audio sounds: `コーヒーと こうちゃ かいました。` (を inaudible)
+- Phoneme analysis (`/audio_query` returns `コオヒイト[PAUSE]
+  コオチャオ[PAUSE]カイマシタ`) confirms the /o/ IS rendered — the
+  issue is prosodic stress, not lexical drop.
+- File size: spaced-input renders are ~50% LARGER than stripped-input
+  renders because of the inserted pauses (e.g., 47277 B → 31149 B for
+  the same 9-syllable sentence).
+
+**Root cause:** legacy gTTS-era renderer (`build_audio.py`) already
+had a `normalize_for_tts()` step that stripped ASCII / full-width
+spaces for exactly this reason. When the corpus flipped to VOICEVOX
+(N5 commit `c28266d`, 2026-05-12 batch re-rendering 1782 grammar
+example MP3s), the new renderer SKIPPED that step — the patch shipped
+without the normalize pass. Latent bug: nobody noticed until a
+learner reported `を` was inaudible on a specific example.
+
+**The fix (per-pipeline, ~3 LoC):**
+
+```python
+# Inside the work-building loop, before passing text to VOICEVOX:
+text = text.replace(" ", "").replace("　", "").replace("\t", "")
+```
+
+Apply BEFORE `synth_segment(text, ...)`. Comment must call out the
+display-vs-audio convention so the next maintainer doesn't strip it
+again.
+
+**Corpus-wide impact:** the bug affected ALL 1782 grammar example
+renders in the 2026-05-12 VOICEVOX batch. Single-file fix (the
+reported example) is insufficient — every spaced bunsetsu+particle
+in the corpus may have weakened audio. Resolution requires a
+corpus-wide `--force` re-render after the script is patched. N5
+swept the full 1782 on 2026-05-14 (~15 min on CPU with 4 workers).
+
+**Generalization for Nx:**
+
+1. **Any TTS pipeline that consumes display text MUST normalize
+   whitespace before rendering.** Add this to the pipeline's docstring
+   AND to a CI check that compares Nx's audio-render hashes against a
+   known-good stripped-input baseline.
+2. **gTTS, VOICEVOX, edge-tts, Azure JA, OpenAI TTS** — all OpenJTalk-
+   or morphological-analyzer-based engines exhibit the same pause-
+   boundary behavior. Cross-pipeline lesson, not VOICEVOX-specific.
+3. **Display convention != audio convention.** Display fields can
+   keep learner-readable spacing; audio pipeline reads the same field
+   and strips spaces at render time. NEVER author a separate
+   `script_for_audio` field — it creates a drift class (the N5 corpus
+   already had the related "wrong script source" failure class
+   documented at §3.2.X / D.9.24 family).
+4. **Render-time normalization is THE place for this — not at
+   authoring time.** Stripping spaces from `ja` at authoring time
+   breaks the bunsetsu-spaced learner display. The display+audio
+   split is intentional; the renderer must bridge it.
+
+**Detection in audit prompts:**
+
+- For each grammar example with audio: render the text via the same
+  VOICEVOX `/audio_query` endpoint with both spaced and stripped
+  inputs. Compare the `accent_phrases` response. If `pause_mora`
+  count differs by ≥2, the spaced version has extra inserted pauses
+  → likely particle-devoicing risk. Phase-0 check candidate.
+- Spot-sample 5-10 grammar example MP3s per audit cycle: listen to
+  full sentence, verify every displayed kana is audible. Native ear
+  required.
+
+**Why an existing FP class did NOT cover this:** §3.2.18 (TTS prosody
+artifacts) covered tone/pitch contour issues, not particle audibility.
+The bunsetsu-pause-devoicing class is new for the audio surface
+specifically.
+
+## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
   speaker, how to prioritize, what feedback structure to expect.
@@ -6142,10 +6229,13 @@ authoring batch. Embed it in fix scripts as a pre-check.
 - **Multi-level cross-corpus consistency** — when Nx ships, the
   same word may appear in N5/N4/Nx vocab with different attestation.
   Reconciliation policy TBD.
-- **Audio re-render cost when content changes** — N5 ducks this
-  question by not re-rendering after content fixes. For Nx, an
-  audio-script consistency check + selective re-render policy is
-  needed.
+- **Audio re-render cost vs content change frequency** — N5's
+  policy as of 2026-05-14 is "re-render the full surface on any
+  renderer change" (validated cost: ~15 min CPU for 1782 grammar
+  examples). For Nx, build a `--missing-only` + `--changed-only`
+  selective re-render path so audio doesn't have to be a full sweep
+  on every text fix. Track input-hash against manifest; re-render
+  only when hash differs.
 - **Hindi native-review process** — all Hindi content in N5 is
   LLM-curated. A native-Hindi reviewer round is queued (IMP-101)
   but not yet scheduled.
@@ -6153,5 +6243,8 @@ authoring batch. Embed it in fix scripts as a pre-check.
 ---
 
 *Appendix F added 2026-05-15 capturing the saturation methodology
-from the N5 audit cycle (27 rounds, 2,061 fixes, JA-81→JA-90).*
+from the N5 audit cycle (27 rounds, 2,061 fixes, JA-81→JA-90).
+Extended 2026-05-14 with F.12 documenting the TTS bunsetsu-space
+particle-devoicing class caught on n5-008.8 (one user-reported audio
+mismatch led to a corpus-wide 1782-file re-render).*
 
