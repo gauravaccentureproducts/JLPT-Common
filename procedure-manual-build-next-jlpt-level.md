@@ -7340,14 +7340,57 @@ For each pair, one gloss was a subset of the other.
 **Caution — distinguish polysemy from dedup:**
 
 Some same-form pairs ARE legitimate polysemy (は = tooth / leaf /
-topic marker; きる = to cut / to wear; いる = to exist / to need).
+topic marker; きる = to cut / to wear; いる = to exist / to need;
+いくつ = "how many" question-word vs counter — different POS).
 These should stay split. The dedup criterion: drop only when the
 two entries' glosses are subset/synonym pairs with no semantic
-distinction. Manual review per pair is necessary.
+distinction AND the same POS. Manual review per pair is necessary.
+
+**Heuristic-miss lesson (added 2026-05-16 from BUG-019):** the
+BUG-018 dedup pass worked from a hand-curated list of 10 cases the
+native-teacher review identified explicitly. A re-audit one hour
+later (BUG-019) found 3 MORE cases of the same shape that hadn't
+been in the original list — 月 (Time/Nature), あつい (Weather/Adjectives;
+duplicate of the 暑い "hot weather" entry within 4-entry homophone
+cluster), きって (Money/Common-Nouns). Net: 1009 → 998 (BUG-018)
+→ 995 (BUG-019).
+
+The miss happened because manual lists don't surface the full
+population. For Nx-level builders, run an automated detector on
+every release:
+
+```python
+import json
+from collections import defaultdict
+V = json.load(open('data/vocab.json', encoding='utf-8'))
+groups = defaultdict(list)
+for e in V['entries']:
+    key = (e.get('form'), e.get('reading'))
+    if all(key): groups[key].append(e)
+for key, entries in groups.items():
+    if len(entries) < 2:
+        continue
+    # Polysemy guard: different POS is legitimate
+    if len({e.get('pos') for e in entries}) > 1:
+        continue
+    # Subset-duplicate detection: gloss-A strictly contains gloss-B (or vice versa)
+    glosses = [(e.get('id'), e.get('gloss','').strip()) for e in entries]
+    for i, (id_a, g_a) in enumerate(glosses):
+        for j, (id_b, g_b) in enumerate(glosses):
+            if i >= j: continue
+            if g_b and g_a and g_b in g_a and g_b != g_a:
+                print(f'SUBSET-DUPLICATE candidate: {key} — {id_b!r} ({g_b!r}) ⊂ {id_a!r} ({g_a!r})')
+```
+
+This catches both BUG-018's 10 + BUG-019's 3 cases AND correctly
+skips legitimate polysemy (different-POS pairs like いくつ).
+Run before every release; manual triage on hits.
 
 **CI invariant pattern:** the dedup itself isn't directly
 CI-able (polysemy is legitimate), but the corpus-count lock catches
-unintended count regressions in either direction.
+unintended count regressions in either direction. The
+automated-detector script above can run as a Phase-0 regression
+block — non-zero hits trigger manual review.
 
 ### F.21.6 Meta-lesson — schema, coverage, and content together
 
