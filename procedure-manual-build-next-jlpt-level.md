@@ -6938,38 +6938,47 @@ The contradiction is in the same entry. A learner who internalizes
 "けれども is wrong" will avoid a perfectly valid formal form for
 life.
 
-### F.19.2 The schema fix
+### F.19.2 The schema fix (final shape after BUG-013)
 
 Add a `kind` field to common_mistakes entries. When
 `kind == "register_variant"`:
 
 - The entry represents two grammatically-valid forms differing in
   register, formality, or pragmatic context.
-- The UI MUST render them neutrally — no strike-through, no green
-  check.
-- Optional `label_a` and `label_b` fields carry short register
-  tags shown alongside each form ("formal full form", "casual
-  contraction", "confirmation-seeker (〜ね)", "neutral question
-  (〜か)", etc.).
-- The WHY field continues to explain when each form is appropriate.
+- The two forms live in `form_a` and `form_b` keys — NOT in
+  `wrong` / `right`. The legacy key names imply WRONG vs RIGHT
+  even on the data surface, and any downstream consumer reading
+  the JSON would see a literal "wrong" key on a valid form. The
+  rename is required, not optional. (BUG-013 lesson.)
+- `label_a` and `label_b` carry short register tags shown
+  alongside each form ("formal full form", "casual contraction",
+  "confirmation-seeker (〜ね)", "neutral question (〜か)", etc.).
+- The UI MUST render the pair neutrally — no strike-through, no
+  green check.
+- The `why` field continues to explain when each form is
+  appropriate.
 
 ```json
 {
-  "kind": "register_variant",
-  "wrong":   "むずかしいです けれども、おもしろいです。",
-  "right":   "むずかしいですけど、おもしろいです。",
+  "kind":    "register_variant",
+  "form_a":  "むずかしいです けれども、おもしろいです。",
+  "form_b":  "むずかしいですけど、おもしろいです。",
   "label_a": "formal full form (けれども)",
   "label_b": "casual contraction (けど)",
   "why":     "Both are valid. けれども is the formal full form; けど is the casual contraction. Register choice, not a grammatical error."
 }
 ```
 
-The `wrong`/`right` field names are kept for backwards compatibility
-with UI code that has not yet been migrated to the new schema — the
-fields now contain "form A" and "form B" semantically when
-`kind == "register_variant"`. New code reads `kind` first to choose
-presentation; old code reads `wrong`/`right` and renders them with
-the (incorrect-but-harmless) wrong/right styling.
+Legacy entries (actual grammar errors, `kind` absent or any other
+value) keep `wrong`/`right`/`why` — those field names match the
+semantic. The renderer chooses the field set based on `kind`.
+
+**Don't leave the legacy keys in place during the migration**
+(BUG-013 lesson). A clean rename in one commit avoids the
+data-surface contradiction. Consumer code can keep a transitional
+fallback (`cm.form_a ?? cm.wrong`) for one release cycle to
+handle any stale entry, but the data file should not contain both
+key sets.
 
 ### F.19.3 UI rendering rule
 
@@ -7004,21 +7013,40 @@ Before adding ANY new common_mistakes entry, ask:
 
 ### F.19.5 Coverage signal
 
-The class keeps reappearing:
+The class kept reappearing — the partial fix didn't hold:
+
 - **BUG-002** (2026-05-16): a `wrong_corrected_pair` entry on n5-008
   mislabeled `ともだちに あいました` (canonical N5 form) as wrong.
 - **BUG-007** (2026-05-16): 11 common_mistakes WHY rationales
   rewritten to say "both correct"; cell labels left intact.
 - **BUG-011** (2026-05-16): the cell-label/WHY contradiction
-  exposed by BUG-007 fixed at the schema level (18 entries across
-  14 patterns).
+  exposed by BUG-007 partly fixed — `kind: "register_variant"` +
+  `label_a` / `label_b` added, but `wrong`/`right` JSON keys
+  retained for backwards compat. Data-surface contradiction
+  remained.
+- **BUG-013** (2026-05-16): the JSON keys themselves renamed —
+  `wrong` → `form_a`, `right` → `form_b` — completing the
+  migration. The data surface no longer carries any "wrong" key
+  on a sentence the same entry calls valid.
 
-If a fourth bug in this class appears, treat it as a process
-failure of the authoring pipeline rather than a one-off data fix
-— gate at authoring (CI invariant: any new common_mistakes entry
-whose WHY contains "both correct" / "register" / "either is
-correct" / "natural in <context>" MUST carry `kind:
-"register_variant"`).
+### F.19.6 Lesson — finish the schema migration in one pass
+
+The BUG-011 → BUG-013 sequence cost an extra round-trip because
+the partial fix (add the new fields, keep the old ones) left the
+data-surface contradiction in place. Backwards compatibility is a
+real concern, but on schema migrations involving USER-VISIBLE
+field labels, ship the rename in the same commit as the new fields
+— don't leave the old labels in the data file. The fallback in the
+consumer code is what handles the migration window, not the
+duplication in the data.
+
+**Authoring-pipeline gate (CI invariant proposal):** any new
+common_mistakes entry whose WHY contains "both correct" /
+"register" / "either is correct" / "natural in <context>" MUST
+carry `kind: "register_variant"` AND use `form_a`/`form_b` keys
+(not `wrong`/`right`). The CI check (JA-64 in N5 today) enforces
+both required-field sets and rejects register_variant entries that
+still carry the legacy keys.
 
 **Cross-reference:** BUG-011 close-out in
 `N5/feedback/n5-audit-2026-05-04.xlsx` (2026-05-16, status Fixed).
@@ -7195,5 +7223,8 @@ point of use, from BUG-012 — `native_reviewed` value renamed to
 `ai_quality_reviewed` across 1758 entries; `review_status_provenance`
 field added alongside; CI invariant + UI badge logic updated; the
 real-human-review value `human_native_reviewed` reserved for a
-future human review pass).*
+future human review pass). F.19 extended on 2026-05-16 with §F.19.6
+(BUG-013 follow-up: don't leave legacy keys in the data during a
+schema migration — finish the rename in the same commit; data-surface
+contradictions cost an extra round-trip in BUG-011 → BUG-013).*
 
