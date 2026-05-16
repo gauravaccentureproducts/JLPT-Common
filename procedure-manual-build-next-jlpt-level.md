@@ -6899,6 +6899,131 @@ Tool: `tools/build_static_mirrors.py`. Six staged commits:
 `4419efc` (reading + listening), `75d0ec1` (meta routes), final
 close-out commit (after this F.18 propagation).
 
+## F.19 Schema-level fix for register-variant common_mistakes (added 2026-05-16)
+
+**This section extends F.17.4.** F.17.4 caught the
+RIGHT/WRONG-framing-for-grammatically-valid-alternatives class as a
+WHY-text problem (BUG-007) — rewrite the rationale to say "register
+variants, both correct" instead of "WRONG vs RIGHT". F.19 catches
+the schema-level follow-on: the WHY text said "both correct" but
+the `wrong`/`right` field-name dichotomy in the JSON data still
+labeled one form as WRONG. Same anti-pattern, different layer.
+Caught as user-reported BUG-011 on 2026-05-16.
+
+### F.19.1 The structural failure
+
+A `common_mistakes` entry has two cells the UI treats asymmetrically:
+
+| Field | UI presentation |
+|---|---|
+| `wrong` | red text, strike-through, ✗ marker |
+| `right` | green text, ✓ marker |
+| `why` | small muted text below |
+
+When a learner reads an entry, they see the red-strike vs green-check
+contrast first; the WHY paragraph comes second and weights less. If
+the WHY says "both forms are correct" but the cell labels say
+WRONG/RIGHT, the visual hierarchy wins. The learner internalizes the
+WRONG label.
+
+Concrete example from N5:
+
+```
+WRONG: むずかしいです けれども、おもしろいです。   ← red strike-through
+RIGHT: むずかしいですけど、おもしろいです。       ← green check
+WHY:   Both けれども and けど are valid; register choice.
+```
+
+The contradiction is in the same entry. A learner who internalizes
+"けれども is wrong" will avoid a perfectly valid formal form for
+life.
+
+### F.19.2 The schema fix
+
+Add a `kind` field to common_mistakes entries. When
+`kind == "register_variant"`:
+
+- The entry represents two grammatically-valid forms differing in
+  register, formality, or pragmatic context.
+- The UI MUST render them neutrally — no strike-through, no green
+  check.
+- Optional `label_a` and `label_b` fields carry short register
+  tags shown alongside each form ("formal full form", "casual
+  contraction", "confirmation-seeker (〜ね)", "neutral question
+  (〜か)", etc.).
+- The WHY field continues to explain when each form is appropriate.
+
+```json
+{
+  "kind": "register_variant",
+  "wrong":   "むずかしいです けれども、おもしろいです。",
+  "right":   "むずかしいですけど、おもしろいです。",
+  "label_a": "formal full form (けれども)",
+  "label_b": "casual contraction (けど)",
+  "why":     "Both are valid. けれども is the formal full form; けど is the casual contraction. Register choice, not a grammatical error."
+}
+```
+
+The `wrong`/`right` field names are kept for backwards compatibility
+with UI code that has not yet been migrated to the new schema — the
+fields now contain "form A" and "form B" semantically when
+`kind == "register_variant"`. New code reads `kind` first to choose
+presentation; old code reads `wrong`/`right` and renders them with
+the (incorrect-but-harmless) wrong/right styling.
+
+### F.19.3 UI rendering rule
+
+```js
+if (cm.kind === 'register_variant') {
+  // neutral framing: register labels in front of each form,
+  // no strike-through, no check mark, due-tint accent (orange)
+  // to visually distinguish from error entries
+} else {
+  // legacy wrong/right rendering: ✗ red strike, ✓ green check
+}
+```
+
+Static-mirror generators apply the same rule: split
+`common_mistakes` into two sections — "Common mistakes" for entries
+without `kind` (actual errors), "Register variants — both forms are
+correct" for `kind == "register_variant"`.
+
+### F.19.4 Authoring rule
+
+Before adding ANY new common_mistakes entry, ask:
+
+1. Is the `wrong` form *ungrammatical* in standalone Japanese?
+   → Yes: omit `kind`; render as legacy error.
+   → No: it differs from `right` in some other axis. What is it?
+2. Does it differ in register (casual/formal), formality
+   (full-form/contraction), pragmatic context
+   (confirmation-seeking/neutral-question), or which N5 pattern is
+   keyed?
+   → All of the above: set `kind = "register_variant"`, populate
+     `label_a` + `label_b`.
+
+### F.19.5 Coverage signal
+
+The class keeps reappearing:
+- **BUG-002** (2026-05-16): a `wrong_corrected_pair` entry on n5-008
+  mislabeled `ともだちに あいました` (canonical N5 form) as wrong.
+- **BUG-007** (2026-05-16): 11 common_mistakes WHY rationales
+  rewritten to say "both correct"; cell labels left intact.
+- **BUG-011** (2026-05-16): the cell-label/WHY contradiction
+  exposed by BUG-007 fixed at the schema level (18 entries across
+  14 patterns).
+
+If a fourth bug in this class appears, treat it as a process
+failure of the authoring pipeline rather than a one-off data fix
+— gate at authoring (CI invariant: any new common_mistakes entry
+whose WHY contains "both correct" / "register" / "either is
+correct" / "natural in <context>" MUST carry `kind:
+"register_variant"`).
+
+**Cross-reference:** BUG-011 close-out in
+`N5/feedback/n5-audit-2026-05-04.xlsx` (2026-05-16, status Fixed).
+Fix script: `tools/fix_bug_011_register_variants_2026_05_16.py`.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
@@ -6943,5 +7068,9 @@ and cross-surface linking; six-stage rollout sequence; meta-route
 markdown-to-HTML pattern for README / CHANGELOG / PRIVACY / NOTICES;
 documented gaps include per-page OG images, Hindi locale variants
 for non-meta surfaces, Playwright snapshot CI, and a mirror-presence
-CI invariant).*
+CI invariant), and F.19 (schema-level fix for register-variant
+common_mistakes from BUG-011 — `kind: "register_variant"` field
+plus `label_a` / `label_b` register tags; UI + static-mirror
+renderers split errors vs variants into separate sections;
+backwards-compatible with legacy `wrong`/`right` field reads).*
 
