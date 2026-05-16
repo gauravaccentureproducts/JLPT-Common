@@ -7554,6 +7554,57 @@ divergence as a corpus schema.
 **CI invariant pattern:** every example object must have the
 canonical field and must NOT have the legacy field. (N5's JA-101.)
 
+### F.22.5 Auto-derived compounds inherit upstream dedup drift (BUG-024, 2026-05-17)
+
+**Failure shape:** corpus A's content is auto-derived from corpus B
+via a pipeline. When corpus B is cleaned (e.g., dedup pass removes
+subset-gloss duplicates), corpus A is NOT automatically regenerated.
+A's auto-derived rows still carry the pre-cleanup state.
+
+**N5 instance:** kanji.json's `n5_compounds` arrays included rows
+auto-derived from vocab.json. The VOCAB-005 / VOCAB-006 dedup
+(BUG-018 / BUG-019, 2026-05-16) removed 13 subset-gloss duplicate
+entries from vocab.json. The kanji.json auto-derivation pipeline
+was not re-run after that fix, so kanji.json kept the old data.
+BUG-024's audit (2026-05-17) found 7 such residual duplicates
+across 月, 前, 気, 電, 道, 言, and 本 entries — same shape as the
+vocab.json bugs that had already been fixed.
+
+**Resolution at N5:** hand-applied the same dedup pattern to
+kanji.json:
+
+- **Drop subset-gloss duplicate** when `(form, reading)` is identical
+  and one gloss is a strict subset of the other (e.g., 月 entry's
+  「moon」 vs 「month, moon」 — drop the subset)
+- **Merge same-reading distinct-senses** when `(form, reading)` is
+  identical but the senses are genuinely different (e.g., 本 entry's
+  「book」 vs 「counter for long thin objects」 — combine into one
+  row with gloss 「book; counter for long thin objects」)
+- **Leave legitimate polysemy** when readings DIFFER (e.g., 一 entry's
+  一日/ついたち "1st of the month" vs 一日/いちにち "one day" — both
+  rows kept; the (form, reading) tuple disambiguates)
+
+**CI invariant pattern:** within any single parent-entry's auto-
+derived child array, the `(form, reading)` tuple must be unique.
+Catches the dedup-drift class automatically. Different readings
+PASS (legitimate polysemy). (N5's JA-103.)
+
+**Operational rule:** any dedup pass on a "source" corpus MUST
+trigger re-derivation of every "derived" corpus that consumes it.
+Document the derivation pipelines in the corpus's _meta.consumers
+field; CI invariant JA-82 enforces that those references resolve,
+but it doesn't yet enforce that the derivation has actually been
+re-run. Future iteration: add a `last_derivation_run_at` timestamp
++ CI check that it post-dates the source's `last_modified`.
+
+**Authoring rule:** when the kanji.json auto-derived pipeline runs,
+it should look up the canonical (form, reading, gloss) from
+vocab.json at derivation time. The 2026-05-17 audit found the
+auto-derived rows had STALE glosses (the old subset versions), not
+the current ones — suggesting the derivation captured a snapshot
+once and hasn't been re-evaluated. Re-derivation should pick up
+the canonical values fresh.
+
 ### F.22.4 Meta-lesson — kanji-corpus quality is a separate audit pass
 
 The 3 BUG-020..022 bugs surfaced in a kanji.json-specific audit AFTER
@@ -7645,5 +7696,12 @@ narrow-scope JA-100 (OOS-kanji-only) missed 5 cases of the inverse
 class — vocab.json kana-only forms where the kanji IS in scope.
 Tightened to strict form-equality. Lesson: default to strict-
 equality CI gates, not narrow-scope ones; the BUG-020 → BUG-023
-round-trip cost an extra audit cycle.*
+round-trip cost an extra audit cycle.
+F.22 also extended 2026-05-17 with F.22.5 — auto-derived data
+inherits upstream dedup drift (BUG-024). The kanji.json
+n5_compounds arrays were auto-derived from vocab.json BEFORE the
+BUG-018/019 dedup landed; the dedup-cleaned source wasn't
+re-propagated. JA-103 catches the residual subset-gloss
+duplicates. Operational rule: every dedup pass on a source corpus
+must trigger re-derivation of all consumer corpora.*
 
