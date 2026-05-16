@@ -7454,16 +7454,45 @@ kanji corpus still displayed OOS kanji.
 last surfaced by the CI invariant added during close-out) plus the
 2 auto-derived example entries that referenced them.
 
-**CI invariant pattern:** for every kanji compound/example with a
-`vocab_id`, assert (1) the vocab_id resolves AND (2) the form
-contains no OOS kanji. Narrow check — form-shape divergence
-(kanji.json kanji form vs vocab.json kana form) is INTENTIONAL
-pedagogy and accepted. Only OOS-kanji drift fails the check. (N5's
-JA-100.)
+**CI invariant pattern (initial narrow scope — later TIGHTENED, see below):** for every kanji compound/example with a `vocab_id`, assert (1) the vocab_id resolves AND (2) the form contains no OOS kanji.
+
+**TIGHTENING — BUG-023 follow-up (added 2026-05-17):**
+
+The narrow OOS-only check above was wired post-BUG-020. A
+re-audit one day later (BUG-023) demonstrated the narrow scope
+missed a real bug class: kanji.json showed kanji forms (友だち,
+手, 上手, 足, 目) while vocab.json had kana-only forms
+(ともだち, て, じょうず, あし, め) for the SAME vocab IDs. All 5
+kanji are in the N5 whitelist — the narrow check accepted this as
+"intentional pedagogy" (form-shape divergence), but it wasn't.
+Standard N5 textbooks (Genki I L3-4, Minna no Nihongo L9-10,
+Try! N5, So-matome N5) all teach those words with kanji. The
+kana-only vocab.json forms were just an inconsistency from
+earlier authoring.
+
+**Tightened invariant (correct default):** for every kanji compound/
+example with a `vocab_id`, assert (1) the vocab_id resolves AND
+(2) the form EQUALS the linked vocab.form EXACTLY. Catches both
+directions of drift:
+
+- BUG-020 case: kanji.json kanji form ↔ vocab.json kana form when
+  the kanji is OOS (vocab was the source of truth; fix is to
+  remove the kanji-corpus compound)
+- BUG-023 case: kanji.json kanji form ↔ vocab.json kana form when
+  the kanji IS in scope (kanji corpus was the source of truth;
+  fix is to upgrade vocab.json's form to kanji)
+
+The triage at fix-time is: if the kanji is in the level whitelist,
+upgrade vocab.json to use the kanji form (BUG-023 path). If the
+kanji is NOT in the whitelist, remove the kanji compound (BUG-020
+path). Either way, the two corpora end up matching.
 
 **Authoring rule:** when fixing OOS kanji in one corpus, run a
 follow-on grep across ALL other corpora that may reference the
-same form. Don't assume the fix propagates automatically.
+same form. Don't assume the fix propagates automatically. And:
+**default to strict-equality CI gates, not narrow-scope ones** —
+the BUG-020 → BUG-023 round-trip cost an extra audit cycle because
+the initial JA-100 was too loose.
 
 ### F.22.2 primary_reading misalignment with N5 standalone use (BUG-021)
 
@@ -7610,5 +7639,11 @@ content / schema / coverage all need explicit CI gates), and F.22
 BUG-022, 2026-05-17 — cross-file display drift after corpus-level
 fixes, primary_reading misalignment with N5 standalone use,
 field-name inconsistency from divergent authoring pipelines;
-lesson: each corpus needs its own native-teacher audit pass).*
+lesson: each corpus needs its own native-teacher audit pass).
+F.22.1 extended 2026-05-17 with the BUG-023 lesson: the initial
+narrow-scope JA-100 (OOS-kanji-only) missed 5 cases of the inverse
+class — vocab.json kana-only forms where the kanji IS in scope.
+Tightened to strict form-equality. Lesson: default to strict-
+equality CI gates, not narrow-scope ones; the BUG-020 → BUG-023
+round-trip cost an extra audit cycle.*
 
