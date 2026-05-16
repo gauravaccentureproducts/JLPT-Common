@@ -7169,6 +7169,214 @@ quality-reviewed" (no "Native-reviewed" claim).
 `N5/feedback/n5-audit-2026-05-04.xlsx` (2026-05-16, status Fixed).
 Fix script: `tools/fix_bug_012_review_status_rename_2026_05_16.py`.
 
+## F.21 Vocab-corpus data-quality bug classes (added 2026-05-16)
+
+Native-teacher re-audit on 2026-05-16 surfaced 5 vocab-corpus data-quality
+bug classes (BUG-014 through BUG-018). They share a common shape:
+schema-level validators (JSON structure, required fields, ID
+integrity) pass, but content-level quality fails — the corpus
+contains semantically wrong, schema-inconsistent, or coverage-gap
+data that only a native speaker / domain reviewer catches on read.
+
+Each class is documented below with the canonical fix pattern and a
+ready-to-wire CI invariant.
+
+### F.21.1 Template-generated semantic-nonsense examples (BUG-014)
+
+**Failure shape:** an automated template (e.g., `<form> が あります。`)
+applied to vocab examples without semantic filtering. Result:
+grammatically possible but semantically nonsensical sentences — a
+native speaker would never say them.
+
+**N5 instances:** 19 entries had the bare `<form> が あります。`
+pattern applied. Time words (一月, 八月, 先月, 来年, ゆうべ) cannot
+take あります in a there-is-X sense. Abstract nouns (外国語, りゅうがく,
+たんご) don't take this frame at all. Bare-location entries
+(ゆうびんきょく, はなや) need a location qualifier to make the
+existential frame natural.
+
+**Authoring rule for new corpora:**
+
+When an example template is applied to many entries, gate at the
+authoring step by classifying entries before applying:
+
+- **Time words**: should use the verb in に-marked time-anchor frames
+  with an EVENT noun taking が あります (「七月に なつまつりが あります。」),
+  NOT bare `<time-word> が あります`.
+- **Locations**: need a location-qualifier prefix ("えきの 前に X が あります",
+  "うちの ちかくに X が あります"). Bare `<location> が あります` is awkward
+  except in immediate spatial context.
+- **Concrete objects / food**: use eat / buy / drink / hold frames
+  ("Xを 食べます", "Xを 買いました"), not bare あります.
+- **Abstract nouns**: drop the あります frame entirely. Use their
+  natural collocations (べんきょうします, おぼえます, etc.).
+
+**CI invariant pattern:** strict regex against vocab examples —
+`^\s*<form>\s*が\s*(あります|います)\s*。?\s*$` — flag any match.
+Headword + が + あります with no other content. (N5's JA-96.)
+
+### F.21.2 Inconsistent field schemas across the corpus (BUG-015)
+
+**Failure shape:** the same field carries multiple incompatible
+types (string / dict / null) across entries, with no schema
+discriminator. Downstream parsers must handle each branch.
+
+**N5 instance:** `counter` field had 3 types (string in 111 entries,
+dict in 204, null in 694). Compounded by `counter_register` being
+doubly-overloaded — string register-hints in 21 entries vs dict
+counter-word metadata in 16 entries (a completely different
+semantic use of the same field).
+
+**Fix pattern:**
+
+1. Pick ONE canonical shape (preferably the more structured one —
+   dict beats string for self-documentation).
+2. Migrate all entries to the canonical shape.
+3. If a single field name has been overloaded with two different
+   semantics, RENAME one of them. (N5: the counter-word metadata
+   moved to a new `counter_word_metadata` field, isolated from the
+   per-noun register hint.)
+4. Add a CI gate that enforces the canonical shape on every entry.
+
+**CI invariant pattern:** per-entry type check on the field; closed
+set of allowed shapes; build fails on any non-matching entry. (N5's
+JA-97.)
+
+### F.21.3 Field-coverage gaps on core entries (BUG-016)
+
+**Failure shape:** a required-for-pedagogy field is set on only a
+fraction of the entries that need it. Missing values silently default
+to null/absent, leaving downstream consumers without the
+information.
+
+**N5 instance:** `transitivity` field was set on 22 of 132 verbs
+(17%). The 22 covered the documented transitive/intransitive verb
+PAIRS (止まる/止める, 開く/開ける) — the easy wins. The 110 SOLO
+verbs (食べる, 飲む, 買う, 行く, 来る, 会う, する, …) had no
+classification at all, despite transitivity governing particle choice
+for the entire grammar layer.
+
+**Authoring rule:** when a pedagogical field carries a closed-enum
+value (transitivity, register, animacy, intransitive-pair, etc.),
+**require 100% coverage** for the entity type it applies to. Don't
+ship "applies on 22 of 132 entries" as a partial state — that
+silently teaches a default that may be wrong.
+
+**Source the classification from a canonical reference**:
+JMdict vt/vi tags, 国立国語研究所 verb tables, standard pedagogical
+references (Genki, Tobira, A Dictionary of Basic Japanese Grammar).
+Add a `<field>_provenance` field naming the source so a future
+human-native review pass has audit trail (N5 used
+`transitivity_provenance: "n5_pedagogical_convention_bug_016_fix"`).
+
+**CI invariant pattern:** for each POS that should carry the field,
+require non-null value from a closed enum on every entry. (N5's
+JA-98.)
+
+### F.21.4 Out-of-scope kanji in display fields (BUG-017)
+
+**Failure shape:** kanji appears in a user-visible field (vocab
+`form`, example `ja` text) but is NOT in the N-level whitelist. The
+schema doesn't catch this because there's no per-field kanji-scope
+invariant — only the existing JA-13 covers grammar examples.
+
+**N5 instance:** 3 kanji (倍, 籍, 末) appeared in 3 vocab `form`
+fields but were absent from `data/n5_kanji_whitelist.json`.
+
+**Fix options (per the bug description):**
+
+(a) Add the kanji to the whitelist (only if it really IS N5-scope;
+   each addition requires readings + stroke order + example vocab).
+(b) Replace the kanji form with kana (conservative; matches the
+   N5 floor).
+(c) Add the kanji to the exception list (`dokkai_kanji_exception.json`)
+   if the policy is "allowed in display but not in distractor pools".
+
+**N5 chose (b).** The kanji form was replaced with kana while the
+vocab ID was kept stable (form is display content; ID is identity).
+This minimizes cross-reference churn — references to the old vocab
+ID continue to resolve.
+
+**Edge case to watch:** form rename may collide with a pre-existing
+kana entry. The N5 fix collided: 週末 → しゅうまつ duplicated an
+existing しゅうまつ entry, requiring a follow-on dedup + cross-corpus
+ID rewrite. Check for collisions BEFORE applying the rename.
+
+**CI invariant pattern:** for every entity's display-field kanji
+characters, assert each is in the level-N whitelist or the explicit
+exception list. (N5's JA-99 covers vocab forms; extend to listening
+script_ja, reading.ja, etc. for full coverage.)
+
+### F.21.5 Cross-section duplicate entries (BUG-018)
+
+**Failure shape:** the same (form, reading) pair appears in 2+
+sections with overlapping (often subset) glosses. The data
+artificially inflates the count and the SRS / flashcard queues show
+the same item twice.
+
+**N5 instance:** 10 entries (道, とけい, ことば, え, 電気, もう, すぐ,
+前, どうも, どうぞよろしく) were duplicated across 2 sections each.
+For each pair, one gloss was a subset of the other.
+
+**Fix pattern:**
+
+1. Pick a canonical section per form. Heuristic: prefer the section
+   whose gloss is more comprehensive; fall back to cross-corpus
+   reference count (which ID is referenced more times in other
+   corpora).
+2. Merge unique data (examples, collocations, gloss notes) from the
+   non-canonical into the canonical.
+3. Drop the non-canonical entry.
+4. Rewrite all cross-references in OTHER corpora
+   (grammar.json, reading.json, listening.json, authentic.json,
+   questions.json, drills_auto.json, kanji.json) to point to the
+   canonical ID. Safe via string replacement because vocab IDs are
+   unambiguous (`n5.vocab.<section>.<form>`).
+5. Update count locks (corpus-size invariants, license-text
+   counts, density floors) — these are intended to fail on
+   deliberate count changes, then be updated to reflect the new
+   ground truth.
+
+**Caution — distinguish polysemy from dedup:**
+
+Some same-form pairs ARE legitimate polysemy (は = tooth / leaf /
+topic marker; きる = to cut / to wear; いる = to exist / to need).
+These should stay split. The dedup criterion: drop only when the
+two entries' glosses are subset/synonym pairs with no semantic
+distinction. Manual review per pair is necessary.
+
+**CI invariant pattern:** the dedup itself isn't directly
+CI-able (polysemy is legitimate), but the corpus-count lock catches
+unintended count regressions in either direction.
+
+### F.21.6 Meta-lesson — schema, coverage, and content together
+
+The five BUG-014…BUG-018 classes are the three operational layers
+of vocab-corpus quality:
+
+| Layer | Failure mode | N5 instance |
+|---|---|---|
+| **Content** (per-entry semantics) | Template nonsense, OOS kanji | BUG-014, BUG-017 |
+| **Schema** (per-field types) | Multi-shape fields, overloaded fields | BUG-015 |
+| **Coverage** (cross-corpus) | Partial-coverage classification, duplicate entries | BUG-016, BUG-018 |
+
+All three layers need explicit CI gates. Schema-level validation
+alone (JSON shape, required fields, ID integrity) catches none of
+these. The pattern from F.17 (native-teacher review) continues:
+**schema validators are necessary but not sufficient. One native-
+teacher pass per content surface before publish.**
+
+**Cross-reference:** BUG-014 through BUG-018 close-out in
+`N5/feedback/n5-audit-2026-05-04.xlsx` (2026-05-16, all Status:
+Fixed). Fix scripts (one per bug):
+`tools/fix_bug_014_vocab_template_nonsense_2026_05_16.py`,
+`tools/fix_bug_015_counter_schema_2026_05_16.py`,
+`tools/fix_bug_016_verb_transitivity_2026_05_16.py`,
+`tools/fix_bug_017_oos_kanji_vocab_forms_2026_05_16.py`,
+`tools/fix_bug_018_dedup_vocab_sections_2026_05_16.py`. New CI
+invariants: JA-96 through JA-99 (the previously-reserved
+JA-91…JA-95 slots remain unwired per the 2026-05-16 Part 1 addendum).
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
@@ -7226,5 +7434,10 @@ real-human-review value `human_native_reviewed` reserved for a
 future human review pass). F.19 extended on 2026-05-16 with §F.19.6
 (BUG-013 follow-up: don't leave legacy keys in the data during a
 schema migration — finish the rename in the same commit; data-surface
-contradictions cost an extra round-trip in BUG-011 → BUG-013).*
+contradictions cost an extra round-trip in BUG-011 → BUG-013), and
+F.21 (vocab-corpus data-quality bug classes from BUG-014 through
+BUG-018 — template semantic-nonsense, inconsistent field schemas,
+field-coverage gaps on core entries, OOS kanji in display fields,
+cross-section duplicate entries; the three operational layers
+content / schema / coverage all need explicit CI gates).*
 
