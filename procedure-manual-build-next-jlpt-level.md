@@ -6466,6 +6466,251 @@ back to the SPA route. For N5:
 `N5/feedback/n5-audit-2026-05-04.xlsx` (2026-05-16, status Fixed).
 Tool: `tools/build_lesson_html_mirrors.py`.
 
+## F.17 Native-teacher bug classes from BUG-003…BUG-009 (added 2026-05-16)
+
+A native-teacher review of `grammar.json` surfaced seven bug classes
+that are structurally invisible to schema-level validators but visible
+on first read to a fluent reviewer. All seven are corpus-authoring
+anti-patterns — they cost nothing to prevent on Day 1 and a lot to
+remediate after publish. Predict and gate.
+
+### F.17.1 Cross-pattern explanation / translation contamination
+**Class:** the JA of pattern P is correct, but the `explanation_en` or
+`translation_en` is the text for a *different* pattern Q (typically a
+neighbor in the curriculum order). Source: copy-paste during authoring,
+or LLM hallucination from a similar-shaped pattern.
+
+**Failure modes observed (N5):**
+- `n5-098` (superlative): `explanation_en` was the description of
+  n5-099 (好き/嫌い + が). All 10 `translation_en` strings were
+  "I like cats." while the 10 JA sentences were correct superlative
+  examples (Fuji tallest, apples favorite, etc.). 100% pedagogical
+  bypass — a learner studying this pattern through the app gets zero
+  correct teaching.
+- `n5-166` ex[5]: JA = 「いってらっしゃい」と かぞくに いいます。;
+  EN = "I get up earlier than my older brother." (Verbatim copy
+  from n5-096 ex[2].)
+
+**Prevention — Phase-0 invariants:**
+- **Cross-pattern explanation similarity check.** For each pattern's
+  `explanation_en`, fuzzy-match (Levenshtein ≥0.85) against every
+  *other* pattern's `explanation_en` in the same level. Any match
+  above threshold is a likely cross-contamination — surface for
+  review.
+- **JA→EN semantic-alignment heuristic.** For each example, compute
+  a noun-set overlap between the JA content words (kanji + katakana)
+  and the EN translation. If overlap = 0 for ≥3 examples in the same
+  pattern, flag the pattern. (Even a crude overlap catches the n5-098
+  case — no apples/Fuji/soccer in "I like cats.")
+- **LLM-as-judge per example.** A second LLM pass with the prompt
+  "Does this English translation accurately render the Japanese?
+  Answer YES/NO + reason." over every example. Cheap at corpus
+  scale; catches all four observed cases here.
+
+**CI invariant family:** JA-91 (cross-pattern explanation similarity),
+JA-92 (per-example JA-EN content overlap). Add to the JA-NN series
+when implementing — these are not in N5's 93-invariant set as of
+this writing.
+
+### F.17.2 Mora-count systematic error in pitch_marks
+**Class:** the `mora` field per pitch_marks entry was computed by a
+heuristic that under- or over-counted morae for high-frequency cases.
+At N5 audit, 911 entries had `mora` ≠ kana-counted morae (more than
+the 787 originally reported — drift went deeper).
+
+**Common errors:**
+- Counts `ー` (long-vowel) as 0 instead of 1 (コーヒー → 3 not 4).
+- Counts `ん` (moraic n) as 0 instead of 1 (ごはん → 2 not 3).
+- Counts small-kana clusters wrong (ょゅゃぁぃぅぇぉ should *combine*
+  with the preceding kana into one mora; ゃ/ゅ/ょ in ぎょう = 1 mora
+  for the digraph; the algorithm sometimes counted each).
+- Counts terminal mora as 0 (truncates last kana).
+
+**Reference rule (canonical):**
+
+> Each kana = 1 mora EXCEPT small ゃ/ゅ/ょ/ぁ/ぃ/ぅ/ぇ/ぉ which combine
+> with the preceding kana. The long-vowel mark ー counts as 1 mora.
+> The sokuon っ counts as 1 mora. The moraic ん counts as 1 mora.
+
+**Reference algorithm (cheap and correct):**
+
+```python
+SMALL_KANA = set("ゃゅょぁぃぅぇぉャュョァィゥェォ")
+def count_mora(kana_string: str) -> int:
+    return sum(1 for c in kana_string if c not in SMALL_KANA)
+```
+
+Run once over the entire vocab + grammar pitch_marks corpus during
+audio build; reject the build if any per-form mora value disagrees.
+
+**CI invariant:** JA-93 — for every pitch_marks entry, computed mora
+must equal stored mora. Add as a hard gate, not an advisory.
+
+**Cross-reference:** BUG-004 (n5-audit-2026-05-04.xlsx).
+
+### F.17.3 Pattern-instance contamination
+**Class:** an example filed under pattern P does not actually contain
+the pattern-defining marker. Distinct from F.17.1 — the JA is correct
+Japanese; it just teaches the wrong thing for the slot it occupies.
+
+**Failure modes observed (N5):**
+- `n5-171` ex[4-6] (ないほうがいい slot): JA = どなたが いいですか / どれが いいですか / どの くるまが いいですか. None contain V-ない + ほうがいい. They are interrogatives + いい, not the advisory pattern.
+- `n5-173` ex[4] (なくてはいけない slot): JA uses ないと いけない, which is the n5-175 pattern, not the slot it sits in.
+- `n5-179` ex[4] (って quotation slot): JA uses て-form for progressive (うたって います), not って-as-quotation.
+
+**Prevention:**
+- **Pattern-marker assertion per example.** Each pattern has a
+  shortlist of surface markers that MUST appear in any example
+  filed under it. For たことがある: `たことが`. For ないほうがいい:
+  `ないほうがいい` or `ないほうが`. For なくてもいい:
+  `なくてもいい` or `なくても`. Authoring tool refuses to commit an
+  example whose JA does not contain at least one marker for the
+  filed pattern.
+- **Late-Nx patterns are highest-risk.** 6 of 8 contamination cases
+  at N5 were in patterns marked `late_n5` or `deferred_to_n4`. These
+  are the patterns farthest from the author's intuition window;
+  audit them first.
+
+**CI invariant:** JA-94 — each example contains ≥1 pattern-defining
+marker. Marker table lives in `data/pattern_markers.json` or similar.
+
+**Cross-reference:** BUG-006.
+
+### F.17.4 RIGHT/WRONG framing for grammatically-valid alternatives
+**Class:** `common_mistakes` entries label a grammatically correct,
+N5-canonical sentence as "WRONG" because it isn't the form the author
+happens to prefer for that specific context. The opposite form is then
+labeled "RIGHT". The WHY field sometimes even admits "either is
+correct" but the WRONG label stays.
+
+**Failure modes observed (N5):**
+- `n5-127` cm[2]: けれども vs けど — けれども is the formal full form;
+  the WHY field said "either is correct semantically" but the entry
+  still marked one WRONG.
+- `n5-105` cm: `行きたくありません。` marked WRONG vs
+  `行きたくないです。` marked RIGHT — both grammatically correct;
+  difference is register (formal vs polite-casual), not grammaticality.
+- `n5-023/051-057` cm: all `〜ね` confirmation-seekers labeled WRONG
+  vs `〜か`-questions labeled RIGHT — pragmatic register, not grammar.
+- `n5-069`/`n5-071`: 「あさごはんを たべて から、…」 (N5-canonical
+  〜てから) and 「まって ください ね」 (natural polite request
+  softener) both labeled WRONG.
+
+**Pedagogical cost:** a learner trusts the RIGHT/WRONG dichotomy. Once
+they internalize "けれども is wrong," they will avoid a valid formal
+form for life — and Japanese-speaking adults will perceive their
+output as register-flat.
+
+**Fix framing — replace "WRONG vs RIGHT" with:**
+- "In *casual* speech, A is the natural choice; B carries *formal*
+  register and is appropriate when …"
+- "Register variants — both correct; pick A in *context X*, B in
+  *context Y*."
+- "Either is correct. A is more common in *speech*; B is more common
+  in *writing/textbooks*."
+
+**Authoring rule:** before marking any form WRONG in `common_mistakes`,
+ask "is the form ungrammatical, or merely register-mismatched / less
+common?" Only ungrammatical forms get the WRONG label. Register and
+pragmatic-context choices use "natural choice in X / Y" framing.
+
+**Cross-reference:** BUG-007. Same class as BUG-002 (the
+「ともだちに あいました」 case from the earlier round). The pattern
+keeps showing up — gate at authoring, not at audit.
+
+### F.17.5 Folk-linguistic grammar terminology
+**Class:** `common_mistakes` rationales explain a particle choice with
+folk-linguistic terminology that doesn't survive scrutiny against
+actual Japanese-language pedagogy.
+
+**Canonical instance observed:**
+- `n5-004` cm[0]: "あう (to meet) is intransitive in Japanese — it
+  takes に, not を." Reality: 会う takes に because it is a contact /
+  encounter verb (相手を必要とする動詞), not because it is intransitive.
+  Many transitive verbs take に. 会う itself is sometimes classified as
+  transitive in 国語辞典. The intransitive label is a folk shortcut
+  that misleads learners about how particle assignment actually works.
+
+**Other risk areas (predict for Nx):**
+- "Transitive/intransitive" used loosely for verbs that take non-を
+  arguments.
+- "Subject/topic" used interchangeably (は marks topic, が marks
+  subject — they are not synonyms; sometimes the topic *is* the
+  subject, sometimes it isn't).
+- "Passive/causative" voice descriptions that don't match the
+  grammatical voice present.
+- "Auxiliary verb" applied to constructions that aren't auxiliaries
+  in any standard analysis.
+
+**Fix framing — describe the verb's actual argument structure:**
+"会う takes the encounter-target with に. The person you meet is the
+に-marked partner — this is a property of encounter/contact verbs,
+independent of transitivity classification."
+
+**Authoring rule:** if a WHY rationale uses a grammar-class label,
+the label must match the term as used in standard Japanese-pedagogy
+references (Genki, Tobira, A Dictionary of Basic Japanese Grammar).
+Folk shortcuts get rewritten in terms of the actual grammatical
+behavior.
+
+**Cross-reference:** BUG-008.
+
+### F.17.6 Pattern-particle mismatch in canonical examples
+**Class:** a pattern teaches a specific particle X, but one or more
+of its canonical examples uses a different particle Y in the slot the
+pattern is supposed to demonstrate. Learners who pattern-match by
+example will form a wrong association.
+
+**Failure modes observed (N5):**
+- `n5-003` (が particle) ex[6]: 「わたしは がくせいです。」 — uses は,
+  not が. The pattern teaches が but the example demonstrates は.
+
+**Prevention:**
+- **Particle-presence assertion.** For each pattern whose
+  `pattern_form` field names a specific particle (e.g., `が`, `を`,
+  `に`, `で`, `と`, `へ`), require at least one occurrence of that
+  particle in the example JA, with the position roughly matching
+  what the pattern teaches (after subject/object marker, before
+  verb, etc. — heuristic check is fine).
+- For interrogative-subject patterns (the canonical case for
+  obligatory が), require an interrogative head (だれ / なに /
+  どれ / どこ / いつ / どの-NP) in the example.
+
+**CI invariant:** JA-95 — particle-pattern alignment check. Run
+per-example, fail build if a pattern's canonical particle is absent
+from ≥30% of its examples.
+
+**Cross-reference:** BUG-009.
+
+### F.17 closing — the meta-lesson
+
+All seven bug classes share a single structural property: **schema
+validators pass while pedagogical content fails.** The JSON is
+well-formed. Required fields are present. Cross-references resolve.
+The audio renders. But what a learner *sees and reads and hears* is
+wrong in ways only a fluent reviewer (or a sufficiently aware LLM
+audit pass) catches.
+
+Three operational implications for Nx:
+
+1. **Schema validation is necessary but not sufficient.** Build the
+   F.17 CI invariants (JA-91…JA-95) as part of the Day-1 invariant
+   set, not as remediation after a user report.
+2. **One native-teacher pass per content surface, before publish.**
+   A 4-hour native-teacher review on a 178-pattern grammar corpus
+   caught the seven classes here. Same cost on Nx-vocab and
+   Nx-grammar at authoring time would prevent the next iteration of
+   the same surface.
+3. **The "either is correct" / register-variant framing.** Common
+   mistakes that label valid alternatives as WRONG are the most
+   pedagogically expensive class — a learner internalizes the WRONG
+   label for life. The framing rewrite (F.17.4) is mandatory for
+   every Nx common_mistakes entry going forward.
+
+**Cross-reference:** BUG-003 through BUG-009 closed in
+`N5/feedback/n5-audit-2026-05-04.xlsx` on 2026-05-16. Fix script:
+`N5/tools/fix_user_bugs_003_to_009_2026_05_16.py`.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
@@ -6495,5 +6740,12 @@ particle-devoicing class caught on n5-008.8 (one user-reported audio
 mismatch led to a corpus-wide 1782-file re-render).
 Extended 2026-05-15 with F.14 capturing the writing-discipline
 rewrite pass (banned-phrase list for audit docs, "saturated" always
-qualified as "against current pattern set").*
+qualified as "against current pattern set").
+Extended 2026-05-16 with F.15 (verb-class particle disambiguation
+from BUG-002), F.16 (static HTML mirrors for SPA hash routes from
+BUG-001), and F.17 (seven native-teacher bug classes from
+BUG-003 through BUG-009 — cross-pattern explanation contamination,
+mora-count systematic error, pattern-instance contamination,
+RIGHT/WRONG framing for valid alternatives, folk-linguistic grammar
+terminology, pattern-particle mismatch in canonical examples).*
 
