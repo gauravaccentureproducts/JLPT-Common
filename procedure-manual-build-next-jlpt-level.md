@@ -6328,6 +6328,144 @@ quality-coverage claims. Terminal language → false confidence →
 "the team said this was complete" when the exam surfaces an item
 class. Bounded language preserves the project's trust contract.
 
+## F.15 Verb-class particle disambiguation in wcp / common_mistakes entries (added 2026-05-16)
+
+**Failure class:** wrong_corrected_pair (wcp) and common_mistakes
+entries that disambiguate Japanese particles by VERB class can
+mislabel an N5-canonical form as "wrong" when the rationale conflates
+two distinct verb classes. Caught on a user-reported bug in N5
+(BUG-002, 2026-05-16): pattern `n5-008` (LIST-EXHAUSTIVE と) had a
+wcp entry stating:
+
+  wrong: ともだちに あいました。 (X "I met with my friend" intent)
+  correct: ともだちと あいました。
+  why: 会う meaning "meet (mutual)" takes と; に is grammatical but
+       more like "happen to encounter".
+
+This is wrong on two counts:
+
+1. **会う is N5-canonical with に**, not と. Genki I, Minna no Nihongo
+   I, and JEES sample papers all use `(person)に 会う`. The rationale
+   ("happen to encounter") is fabricated; に + 会う is the standard
+   direction-of-meeting marker, not a chance-encounter implication.
+2. **The entry is off-pattern** for n5-008. n5-008 covers LIST-
+   EXHAUSTIVE と (the AND-joining particle for nouns); the に-vs-と
+   distinction for verbs like 会う / 遊ぶ / 食べる is about the
+   COMPANION-と vs DIRECTION-に *verb class*, not list-exhaustion.
+   The two grammatical functions of と (companion + list-exhaustive +
+   quotation) share spelling but have distinct disambiguation
+   profiles.
+
+**Verb-class disambiguation rule (state explicitly in wcp rationales):**
+
+| Verb class | Canonical particle | Example | Notes |
+|---|---|---|---|
+| 会う (meet) | に | ともだちに 会いました | per Genki I Lesson 4 etc. |
+| 行く / 来る (go/come) | に or へ | 学校に / 学校へ 行きます | direction; 〜と for joint travel is companion |
+| 遊ぶ (play with) | と (companion) | ともだちと 遊びました | joint activity |
+| テニスを する / 食事を する | と (companion) | ともだちと テニス | joint activity |
+| 話す (talk) | と | 先生と 話しました | mutual action |
+| 結婚する (marry) | と | Aさんと 結婚 | mutual action |
+| 出会う (encounter — different from 会う) | に | 駅で 先生に 出会いました | per JLPT samples |
+
+Per-verb the canonical particle is fixed; a wcp that says "[verb]
+takes [particle] universally" is over-generalized and will mislabel
+a valid form when applied to a verb of a different class.
+
+**Detection pattern in audit prompts:**
+
+- For every wcp / common_mistakes entry whose `why` contains "takes と"
+  or "takes に" without further qualification: verify the specific
+  verb in the example against the verb-class table above.
+- Phase-0 candidate: scan wcp entries whose `wrong` field uses the
+  N5-canonical particle for its verb (例 `(人)に 会う`, `(人)と 遊ぶ`,
+  `(人)と 結婚`) and flag for manual review. Hard to fully automate
+  because verb-class detection requires lexical knowledge; a hand-
+  curated list of N5 verb-class assignments + a regex scanner gets
+  the high-precedence cases.
+
+**Fix pattern (single wcp + cross-pattern impact):**
+
+For N5 the bug was confined to one wcp entry. Replaced with an
+on-pattern entry using a JOINT-action verb (テニスを する) that
+genuinely takes companion-と, with a rationale that explicitly notes
+会う is a separate class. Phase-0 corpus scan confirmed no other
+n=534 wcp entries (178 patterns × 3 wcps) had the same mislabel
+class.
+
+**Generalization for Nx levels:**
+
+- Day-1 authoring discipline: BEFORE authoring a particle wcp, write
+  the verb-class table for the level and verify the wcp's verb is
+  classified correctly.
+- The verb-class table for higher levels (N4: 〜てもらう, N3: 〜ば
+  conditional particles, etc.) needs its own table; do not assume
+  N5's verb-class mappings transfer.
+- Document explicitly that companion-と vs direction-に is per-verb,
+  not per-pattern.
+
+**Cross-reference:** logged as BUG-002 in
+`N5/feedback/n5-audit-2026-05-04.xlsx` "User Reported Bugs" sheet
+(2026-05-16, status Fixed). Test case: `n5-008` wcp[2] should mention
+both verb classes in its `why` field.
+
+## F.16 Static HTML mirrors for SPA hash routes (added 2026-05-16)
+
+**Failure class:** SPA apps with hash-routing (`#/learn/<id>`) are
+invisible to non-JS fetchers because:
+
+- Browsers strip the `#` fragment before sending the request.
+- The server returns the SPA shell (an empty `<div id="app">`).
+- The lesson content is rendered client-side by JavaScript.
+- LLM web-fetch tools, search engine crawlers (with limited JS
+  budgets), archive snapshots, and read-only mirrors all see an
+  empty page.
+
+Caught on a user-reported bug in N5 (BUG-001, 2026-05-16):
+"Claude chat is unable to access https://(...)/#/learn/n5-008
+because hash fragments after `#` are never sent to the server."
+
+**The fix pattern:** generate one static HTML mirror per content
+unit at a crawlable path, with `<link rel="canonical">` pointing
+back to the SPA route. For N5:
+
+- `/N5/lessons/<pattern-id>.html` (178 grammar patterns)
+- `/N5/lessons/index.html` (browsable index)
+- Built by `tools/build_lesson_html_mirrors.py` (re-runnable;
+  idempotent on unchanged grammar.json)
+- Each page is read-only, plain HTML + minimal inline CSS, no JS.
+- A `<p class="meta">` banner at top tells human visitors "this is
+  a static mirror — the interactive version is at `../#/learn/<id>`."
+- Canonical URL points back to the SPA route, so search engines
+  deduplicate the static + interactive views.
+
+**Generalization for Nx levels:**
+
+- **Build a mirror generator on Day 1**, not after a user reports the
+  problem. Each content surface (grammar / vocab / kanji / reading /
+  listening) gets its own mirror at `/Nx/lessons/<id>.html` or
+  `/Nx/words/<form>.html` etc.
+- **The mirror surface is read-only.** Audio playback, furigana
+  toggles, drill mode, SRS — all live in the SPA. Mirror = read.
+- **Run the generator from CI** so the mirrors stay in sync with the
+  source data. Add a Phase-0 check: `for each pattern in grammar.json,
+  assert lessons/<id>.html exists and its <title> contains the
+  pattern field`.
+- **Sitemap matters.** Generate `sitemap.xml` listing all mirror
+  URLs for crawler discoverability.
+
+**Scope at N5 today:**
+
+- Grammar mirrors: ✅ Done (178 + 1 index).
+- Vocab mirrors: deferred (1009 entries; same approach extensible).
+- Kanji mirrors: deferred (106 entries; could fold into vocab build).
+- Reading mirrors: deferred.
+- Listening mirrors: limited value (the page-content is the audio).
+
+**Cross-reference:** logged as BUG-001 in
+`N5/feedback/n5-audit-2026-05-04.xlsx` (2026-05-16, status Fixed).
+Tool: `tools/build_lesson_html_mirrors.py`.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
