@@ -5875,17 +5875,28 @@ These strong sections collectively constituted roughly 30-40% of the manual's va
 # Appendix F — Content audit saturation methodology (2026-05-15 N5 session)
 
 This appendix captures the methodology from the 2026-05-15 audit-fix-
-iterate cycle on N5 — **27 audit rounds, 2,061 content fixes, 9 new CI
-invariants (JA-81→JA-90), final state 93/93 invariants green**.
+iterate cycle on N5 — **27 audit rounds, 2,061 content fixes within
+the audit categories defined this session, 9 new CI invariants
+(JA-81→JA-90), state at the most recent commit: 93/93 invariants green**
+*against the current invariant set*. "Green" means the checks we have
+written pass on the current corpus — it does not assert universal
+correctness.
 
 For Nx level builders: apply this methodology AFTER the first authoring
-pass converges (~Phase 4 in §C.14's ordering), not before. The cycle
-takes ~3-5 sessions; expect it to surface ~1,500-2,500 fixes if the
-LLM-authored content was templated similarly to N5's was.
+pass produces a working corpus (~Phase 4 in §C.14's ordering), not
+before. The cycle takes ~3-5 sessions; expect it to surface
+~1,500-2,500 fixes if the LLM-authored content was templated similarly
+to N5's was.
 
 ## F.1 The audit-fix-iterate cycle (binding methodology)
 
-**One cycle = one audit class, iterated until 0 real findings.**
+**One cycle = one audit class, iterated until the checker for that
+class returns 0 real findings.** "0 real findings" means the checker
+finds nothing matching its currently-defined pattern set — it does
+not mean the corpus is defect-free against the broader concept the
+checker is approximating. A new finding-class may exist outside the
+checker's scope; this is handled by adding a new audit class
+(another cycle), not by claiming the existing one is complete.
 
 ```
 1. Author audit checker (e.g., not-required/tools-archive/audit_XX.py)
@@ -5903,22 +5914,39 @@ LLM-authored content was templated similarly to N5's was.
 11. Commit + push (one cycle = one commit)
 ```
 
-**Saturation definition:** a checker is SATURATED when ALL of:
+**Saturation definition:** a checker is **saturated against its
+current pattern set** when ALL of:
 - It returns 0 real findings on the live corpus.
 - Every documented false-positive class is suppressed in the checker.
-- A CI invariant locks the floor.
+- A CI invariant prevents re-introduction of the specific patterns
+  this checker scans for.
 - A second-pass run from a fresh seed produces no new findings.
+
+**Important:** "saturated" here = *this checker has nothing left to
+find with its currently-defined regex / lookup table*. It does NOT
+mean the corpus is free of defects of the broader kind the checker
+approximates — only that the **named patterns** are absent. A new
+template, a new error class, or a native-human review may surface
+items the checker doesn't recognize. Write Nx audit docs with the
+qualifier ("saturated against this prompt's pattern set"); never
+write "saturated" bare. See N5/prompts/Japanese language Accuracy
+check.txt → WRITING DISCIPLINE FOR AUDIT DOCS for the full rewrite
+table.
 
 Anti-pattern: declaring saturation after one clean run without the
 fresh-seed re-run. The 2026-05-14 vocab audit caught a NEW template
 (`Xを 見ました`) only after the structural audit had already declared
-clean — because the checker was too narrow.
+clean — because the checker was too narrow. The lesson generalizes:
+"saturated" is always against the current pattern set; the pattern
+set itself can be incomplete.
 
 ## F.2 Template-leak anti-pattern family — predict these on Nx
 
-The 2026-05-15 N5 session caught **6 distinct templated-example
+The 2026-05-15 N5 session caught **8 distinct templated-example
 patterns** across vocab/grammar/listening/papers — totaling ~860 fixes.
-For Nx level: build checkers for these BEFORE the first audit pass.
+These 8 are *the ones we caught*; more may exist at any level that
+weren't named here. For Nx level: build checkers for these BEFORE
+the first audit pass, AND extend the catalog when new templates surface.
 
 | Template | What it looks like | Where caught |
 |----------|-------------------|--------------|
@@ -5934,7 +5962,10 @@ For Nx level: build checkers for these BEFORE the first audit pass.
 For each, the checker regex is documented in
 `N5/prompts/Japanese language Accuracy check.txt` §§A18-A45. **Copy these
 regexes verbatim to Nx and run before authoring fixes** — saves 50-90%
-of the iteration cost.
+of the iteration cost *for the patterns these specific regexes match*.
+Templates that aren't in this 8-row table will not be caught by these
+regexes; sample-based review at Nx may surface additional templates
+that should be added.
 
 ## F.3 False-positive catalog discipline (FP-1 through FP-15)
 
@@ -6008,8 +6039,9 @@ Add CI gate immediately to lock the gain.
 
 ## F.6 Native-teacher 4-phase audit methodology
 
-After structural saturation (template-leak, locale parity, schema
-shape), apply the deeper linguistic pass:
+After structural saturation against the current checker set (template-
+leak, locale parity, schema shape — i.e. these specific checkers all
+return 0), apply the deeper linguistic pass:
 
 ### Phase A — Programmatic deep-linguistic checks (6+ categories)
 
@@ -6074,43 +6106,73 @@ gives high-confidence values. For the long-tail ~5%, marks them
 explicitly `'unverified'` so future native-human review can
 prioritize.
 
-For Nx: do this in cycle 4 or 5 (after structural + linguistic
-saturation). Estimated effort: 1-2 sessions, ~50-300 fixes.
+For Nx: do this in cycle 4 or 5 (after structural + linguistic checks
+return 0 against their current pattern sets). Estimated effort: 1-2
+sessions, ~50-300 fixes within the cross-reference dimensions chosen.
 
 ## F.8 Audit-coverage disclosure pattern
 
-After audit saturation, commit a transparent disclosure document:
-`docs/AUDIT-COVERAGE-YYYY-MM-DD.md`.
+After audit saturation against the current pattern set, commit a
+transparent disclosure document: `docs/AUDIT-COVERAGE-YYYY-MM-DD.md`.
 
 **Required sections:**
 1. Auditor persona (who, with caveats about non-native limitations)
 2. Coverage matrix — what was programmatically validated vs sampled
-   vs unchecked
-3. Confidence levels per dimension
-4. Items deferred to native-human review (with rationale per item)
-5. CI invariants added (JA-NN list with what each locks)
+   vs unchecked, **each row bounded by what was scanned** (regex
+   pattern named, sample size disclosed, external reference cited)
+3. Confidence levels per dimension, with the basis for the
+   confidence label (e.g. "High *for the patterns scanned*" not
+   "High" bare)
+4. Items deferred to native-human review (with rationale per item
+   and explicit "unverified" labeling, not "presumed correct")
+5. CI invariants added (JA-NN list with "prevents re-introduction of
+   <named pattern>" framing — not "locks gain" framing)
+6. **Writing-discipline note at top** — explicit statement that
+   coverage claims are bounded by what was measured; absolutist
+   phrasing like "every / all / complete / final / saturated" should
+   always be read with the implicit qualifier "against what we
+   measured"
 
 **Why this matters:** the project's quality contract becomes
 explicit. Future contributors (or institutional adopters) can see
 what's verified vs what still needs human review, without having to
-re-discover gaps.
+re-discover gaps. Crucially, the disclosure must NOT overclaim — a
+future JLPT exam or native review may surface items outside the
+audit's defined categories, and the disclosure's prose must not
+imply those couldn't exist.
 
 N5 reference: `N5/docs/AUDIT-COVERAGE-2026-05-15.md` and
-`N5/docs/AUDIT-REPORT-NATIVE-TEACHER-2026-05-15.md`.
+`N5/docs/AUDIT-REPORT-NATIVE-TEACHER-2026-05-15.md`. See also the
+WRITING DISCIPLINE FOR AUDIT DOCS block in
+`N5/prompts/Japanese language Accuracy check.txt` for the explicit
+rewrite table that translates absolutist phrasings into bounded ones.
 
-## F.9 CI invariant growth pattern — lock every gain
+## F.9 CI invariant growth pattern — prevent re-introduction of the specific patterns caught
 
-Every audit cycle that produces ≥1 fix MUST add a CI invariant
-locking the cleanup. Without this, future authoring batches re-
-introduce the same anti-pattern. N5's session went 81 → 92
-invariants (+11 net) across 27 audit rounds; this is the right
-ratio.
+Every audit cycle that produces ≥1 fix MUST add a CI invariant that
+prevents *re-introduction of the specific named patterns* caught.
+Without this, future authoring batches re-import the same anti-
+patterns. N5's session went 81 → 93 invariants (+12 net) across 27
+audit rounds; this is the right ratio.
+
+**Important framing:** a CI invariant does NOT "lock the gain" in
+the absolute sense. It prevents the named-and-coded patterns from
+re-appearing. A new template, a new error class, or a renaming of an
+existing pattern can bypass an invariant whose regex doesn't recognize
+the new shape. The growth pattern is therefore: each audit cycle
+catches new patterns → each new invariant prevents *those new
+patterns* → the catalog of "things we have prevented" grows
+monotonically, while "things we have not yet thought to prevent"
+remains open-ended.
 
 **Invariant naming convention:** `JA-NN` where NN is monotonically
 increasing. Embed the audit pass date in the description string for
 audit-trail. Use a single check function with multiple LOCK sub-
 patterns when one audit cycle removes multiple distinct anti-
 patterns (N5 JA-89 has 5 sub-locks for the native-teacher pass).
+Each lock should be documented as "prevents re-introduction of
+<pattern A36>" or similar — never as "ensures correctness of <X>"
+since that overclaims.
 
 ## F.10 N5 kanji whitelist authoring guardrail — extends to any Nx
 
@@ -6221,6 +6283,51 @@ artifacts) covered tone/pitch contour issues, not particle audibility.
 The bunsetsu-pause-devoicing class is new for the audio surface
 specifically.
 
+## F.14 Writing discipline for audit prose (added 2026-05-15)
+
+The 2026-05-15 N5 session's audit output, on first draft, used
+absolutist language that overclaimed coverage: "every Japanese
+example," "0 real findings," "RESOLVED," "Final CI count," "closed
+enum," "saturated." When the maintainer reviewed the docs, the
+question raised was: *"what if a JLPT exam includes items outside
+what we audited for?"* The honest answer is that the docs implied
+universal coverage but the audits were bounded by specific patterns
+and sample sizes. The fix was a rewrite pass against an explicit
+banned-word list.
+
+**For Nx builders:** apply the same discipline from day one. The
+rewrite table (translating "every X" → "every X in the corpus
+snapshot scanned", etc.) is in
+`N5/prompts/Japanese language Accuracy check.txt` → WRITING DISCIPLINE
+FOR AUDIT DOCS section. The corresponding regression check (Phase-0
+scan for banned phrases in audit-coverage docs) is in
+`N5/prompts/N5Improvement.txt` → Phase-0 Audit-doc writing-discipline
+scan.
+
+**Key principle:** the work itself is honest — the audits did what
+they did, against bounded inputs. Only the prose drifts when authors
+reach for terminal-sounding words ("complete", "final", "RESOLVED")
+to summarize. The prose must match the bounded scope of the work.
+
+**Banned phrasings + their replacements (short form):**
+
+| Banned (in audit docs) | Use instead |
+|----|----|
+| "every X" / "all X" | "every X *in the corpus snapshot scanned*" |
+| "0 findings" | "0 findings *against the N patterns scanned*" |
+| "RESOLVED" / "final" / "complete" | "addressed for M of N items in scope" |
+| "closed enum" | "closed against currently-observed values" |
+| "JA-NN locks the gain" | "JA-NN prevents re-introduction of these specific patterns" |
+| "saturated" / "converged" | "checker returns 0 against current pattern set" |
+| "Final CI count: N" | "CI invariants at this checkpoint: N" |
+| "Statistically ≥95% likely natural" (from sub-2% sample) | "sample surfaced 0 issues; remainder unverified" |
+
+**Why it matters at every level:** future Nx readers, native
+reviewers, institutional adopters, and learners read audit docs as
+quality-coverage claims. Terminal language → false confidence →
+"the team said this was complete" when the exam surfaces an item
+class. Bounded language preserves the project's trust contract.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
@@ -6242,9 +6349,13 @@ specifically.
 
 ---
 
-*Appendix F added 2026-05-15 capturing the saturation methodology
-from the N5 audit cycle (27 rounds, 2,061 fixes, JA-81→JA-90).
+*Appendix F added 2026-05-15 capturing the audit-fix-iterate cycle
+methodology from the N5 audit session (27 rounds, 2,061 fixes within
+the categories defined that session, JA-81→JA-90).
 Extended 2026-05-14 with F.12 documenting the TTS bunsetsu-space
 particle-devoicing class caught on n5-008.8 (one user-reported audio
-mismatch led to a corpus-wide 1782-file re-render).*
+mismatch led to a corpus-wide 1782-file re-render).
+Extended 2026-05-15 with F.14 capturing the writing-discipline
+rewrite pass (banned-phrase list for audit docs, "saturated" always
+qualified as "against current pattern set").*
 
