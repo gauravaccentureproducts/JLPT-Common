@@ -7420,6 +7420,129 @@ Fixed). Fix scripts (one per bug):
 invariants: JA-96 through JA-99 (the previously-reserved
 JA-91…JA-95 slots remain unwired per the 2026-05-16 Part 1 addendum).
 
+## F.22 Kanji-corpus data-quality bug classes (added 2026-05-17)
+
+Native-teacher audit of `kanji.json` on 2026-05-17 surfaced 3
+bug classes (BUG-020/021/022) parallel to the vocab-quality bugs
+captured in F.21. Same three operational layers — content / schema /
+coverage — applied to the kanji corpus.
+
+### F.22.1 Cross-file display drift after corpus-level fixes (BUG-020)
+
+**Failure shape:** a fix landed in one corpus file but didn't
+propagate to other corpora that reference the same items.
+Cross-references resolve (vocab_id still valid), but the displayed
+form drifts between files.
+
+**N5 instance:** BUG-017 moved vocab.json entries 週末 / 国籍 to
+kana forms (しゅうまつ / こくせき) because 末 / 籍 are not in the
+N5 kanji whitelist. The kanji.json file kept the kanji forms in
+its `n5_compounds` and `examples` arrays for 週 and 国 — so the
+kanji corpus still displayed OOS kanji.
+
+**Resolution options (per the bug description):**
+
+(a) Update kanji.json forms to match vocab.json (use kana). Loses
+    pedagogical value — kanji corpus exists to teach kanji.
+(b) Revert vocab.json and add the OOS kanji to the whitelist. Only
+    if the kanji really IS level-scope.
+(c) Remove the OOS compounds entirely. Cleanest when the kanji is
+    out of scope by both the whitelist AND standard pedagogy
+    (週末 / 国籍 are N4 territory at N5).
+
+**N5 chose (c)** — removed 3 compounds (週末, 国籍, 手紙 — the
+last surfaced by the CI invariant added during close-out) plus the
+2 auto-derived example entries that referenced them.
+
+**CI invariant pattern:** for every kanji compound/example with a
+`vocab_id`, assert (1) the vocab_id resolves AND (2) the form
+contains no OOS kanji. Narrow check — form-shape divergence
+(kanji.json kanji form vs vocab.json kana form) is INTENTIONAL
+pedagogy and accepted. Only OOS-kanji drift fails the check. (N5's
+JA-100.)
+
+**Authoring rule:** when fixing OOS kanji in one corpus, run a
+follow-on grep across ALL other corpora that may reference the
+same form. Don't assume the fix propagates automatically.
+
+### F.22.2 primary_reading misalignment with N5 standalone use (BUG-021)
+
+**Failure shape:** the canonical-reading field is set to the
+reading the kanji has in compounds, even though the standalone
+form a learner first encounters uses the OTHER yomi.
+
+**N5 instance:** 6 kanji had `primary_reading` set to on-yomi while
+the standalone N5 sentence form is the kun-yomi:
+
+| Kanji | Wrong primary | Correct primary | Compound role of on-yomi |
+|---|---|---|---|
+| 人 | にん | ひと | counter suffix (一人 ひとり is irregular, 二人 with にん) |
+| 中 | ちゅう | なか | prefix/suffix (中国 ちゅうごく, 一日中 いちにちじゅう) |
+| 外 | がい | そと | prefix only (外国 がいこく) |
+| 東 | とう | ひがし | prefix only (東京 とうきょう) |
+| 車 | しゃ | くるま | suffix (電車 でんしゃ, 自転車 じてんしゃ) |
+| 国 | こく | くに | prefix only (国際 こくさい, 国民 こくみん) |
+
+The standalone usage is what a learner first encounters when reading
+N5 sentences. The compound-only on-yomi appearing as primary creates
+a learner mis-association.
+
+**Defensible on-yomi-primary cases that should stay:** kanji whose
+N5 use is overwhelmingly compound or both equal. Examples: 時 (じ —
+時 alone never appears, only as part of clock-time expressions), 社
+(しゃ — never standalone at N5), 駅 (えき — both standalone and
+compound).
+
+**Authoring rule:** when setting `primary_reading`, ask: "Does the
+kanji ever appear ALONE in an N5 sentence? If yes, which yomi does
+that standalone form use?" That answer is the primary_reading.
+Compound-frequency is secondary.
+
+**CI invariant pattern:** a lock for specific known-tricky kanji
+that mustn't drift back. (N5's JA-102 covers the 6 cases above.)
+
+### F.22.3 Field-name inconsistency in examples (BUG-022)
+
+**Failure shape:** the same conceptual field uses two different key
+names across entries based on authoring pipeline provenance.
+
+**N5 instance:** kanji.json examples field carried 374
+entries with `form`, 20 with `lemma` only, and 14 with both (where
+hand-authored entries used `form` and auto-derived ones from
+vocab.json used `lemma`). The provenance is already captured in
+`auto_derived: true`, so the dual field names were redundant.
+
+**Resolution:** pick one canonical name (kept `form`, matching
+vocab.json and the majority of entries); migrate the 18 lemma-only
+entries (after BUG-020 removed 2) plus drop `lemma` from the 14
+dual-field entries. Provenance signal stays in `auto_derived` +
+`vocab_id`.
+
+**Authoring rule:** when two pipelines emit the same conceptual
+field, normalize at the merge point. Don't ship the pipeline
+divergence as a corpus schema.
+
+**CI invariant pattern:** every example object must have the
+canonical field and must NOT have the legacy field. (N5's JA-101.)
+
+### F.22.4 Meta-lesson — kanji-corpus quality is a separate audit pass
+
+The 3 BUG-020..022 bugs surfaced in a kanji.json-specific audit AFTER
+the vocab.json audit (BUG-014..019) had landed. The lesson: don't
+assume "vocab corpus audited = kanji corpus also clean." Each corpus
+needs its own native-teacher pass.
+
+**Cross-corpus consistency checks** (like F.22.1's vocab_id → vocab.form
+resolution) are necessary but not sufficient — they catch reference
+INTEGRITY but not display drift or pedagogical correctness.
+
+**Cross-reference:** BUG-020 through BUG-022 close-out in
+`N5/feedback/n5-audit-2026-05-04.xlsx` (2026-05-17, all Status:
+Fixed). New CI invariants JA-100, JA-101, JA-102. Fix scripts:
+`tools/fix_bug_020_kanji_oos_compounds_2026_05_16.py`,
+`tools/fix_bug_021_primary_reading_kun_2026_05_17.py`,
+`tools/fix_bug_022_kanji_examples_form_field_2026_05_17.py`.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
@@ -7482,5 +7605,10 @@ F.21 (vocab-corpus data-quality bug classes from BUG-014 through
 BUG-018 — template semantic-nonsense, inconsistent field schemas,
 field-coverage gaps on core entries, OOS kanji in display fields,
 cross-section duplicate entries; the three operational layers
-content / schema / coverage all need explicit CI gates).*
+content / schema / coverage all need explicit CI gates), and F.22
+(kanji-corpus data-quality bug classes from BUG-020 through
+BUG-022, 2026-05-17 — cross-file display drift after corpus-level
+fixes, primary_reading misalignment with N5 standalone use,
+field-name inconsistency from divergent authoring pipelines;
+lesson: each corpus needs its own native-teacher audit pass).*
 
