@@ -6711,6 +6711,194 @@ Three operational implications for Nx:
 `N5/feedback/n5-audit-2026-05-04.xlsx` on 2026-05-16. Fix script:
 `N5/tools/fix_user_bugs_003_to_009_2026_05_16.py`.
 
+## F.18 Static HTML mirrors — full-surface generalization (added 2026-05-16)
+
+**This section extends F.16.** F.16 introduced the static-mirror
+pattern for SPA hash routes against the grammar surface only (BUG-001
+resolution). F.18 generalizes it to every content + meta surface
+(BUG-010 resolution).
+
+**Why generalize:** F.16's grammar-only mirrors solved the
+single-surface case for LLM web-fetch tools (Claude chat fetching a
+specific grammar pattern). It did NOT solve:
+
+- **Search-engine indexing of non-grammar content.** Google /
+  Bing / Baidu cannot index vocab, kanji, reading passages,
+  listening transcripts, or meta pages (changelog, privacy) on a
+  hash-routed SPA.
+- **Archive.org snapshots of any deep link.** Hash routes return
+  the SPA shell; archive.org preserves only the shell.
+- **Social-card previews.** Open Graph crawlers (Twitter, LinkedIn,
+  Discord, Slack) cannot read lesson-specific titles or descriptions
+  from hash-routed pages.
+- **RSS readers / accessibility tools relying on initial HTML.**
+  Anything that doesn't execute JS sees only the shell.
+- **Users with JS disabled.** Corporate firewalls, privacy
+  extensions, older devices.
+
+### F.18.1 Path structure (canonical)
+
+Mirror every SPA route at a crawlable subdirectory path with
+`index.html`, mirroring the SPA's actual hash-route hierarchy:
+
+| SPA hash route | Static mirror path |
+|---|---|
+| `#/learn/<id>` (grammar) | `/Nx/learn/grammar/<id>/index.html` |
+| `#/learn/vocab/<form>` | `/Nx/learn/vocab/<form>/index.html` |
+| `#/kanji/<glyph>` | `/Nx/kanji/<glyph>/index.html` |
+| `#/reading/<id>` | `/Nx/reading/<id>/index.html` |
+| `#/listening/<id>` | `/Nx/listening/<id>/index.html` |
+| `#/home`, `#/changelog`, … (meta) | `/Nx/<slug>/index.html` |
+
+The path-on-disk does NOT need to match the SPA hash path
+character-for-character (e.g. SPA uses `#/learn/<id>` for grammar
+without a `grammar/` segment; mirror uses `/learn/grammar/<id>/`
+for cleaner URL hierarchy on disk). The canonical link inside each
+mirror points back to the *actual* SPA hash route, so search
+engines deduplicate correctly.
+
+### F.18.2 Per-page requirements
+
+Every generated static mirror MUST carry:
+
+1. **Route-specific `<title>` and `<meta name="description">`** —
+   derived from the content (pattern name + EN gloss, form +
+   reading, kanji + meaning, passage title, etc.). Never a copy of
+   the SPA shell's generic title.
+
+2. **Open Graph tags** — `og:type`, `og:url` (canonical SPA URL),
+   `og:title`, `og:description`, `og:site_name`, `og:image`. At
+   minimum a single shared og:image (app icon) suffices in the
+   first iteration; per-route OG images are an enhancement for
+   later.
+
+3. **Twitter Card** — `twitter:card`, `twitter:title`,
+   `twitter:description`. `summary` (not `summary_large_image`)
+   unless per-page og:image is implemented.
+
+4. **`<link rel="canonical">`** pointing to the *SPA hash route*,
+   not the mirror path. This makes the SPA the canonical URL;
+   search engines understand the mirror as a fetchable
+   representation of the canonical resource.
+
+5. **Inline CSS** sufficient to render readably without JS, plus
+   a `prefers-color-scheme: dark` media query for parity with the
+   SPA's dark mode.
+
+6. **JS redirect with bot-friendly delay** — a `setTimeout` of
+   ~1500ms before `location.href = <SPA URL>`. Long enough that
+   search-engine bots aborting JS execution before the deadline
+   see the static content; short enough that human users land on
+   the SPA without visible waiting. Skip the redirect on
+   `?nojs=1` or `?goSPA=0` query params so crawlers and human
+   reviewers can inspect the static surface explicitly.
+
+7. **Breadcrumb navigation + content-licence footer** — orient
+   the reader and disclose attribution.
+
+8. **Locale variants** (where the data supports it) — emit
+   `index.html` (default locale) and `index.<lang>.html` per
+   additional locale, with `<link rel="alternate" hreflang>`
+   between them.
+
+### F.18.3 Cross-linking between surfaces
+
+The mirror surface should NOT be an island — each generated page
+links to related content via the SAME static-mirror URL structure:
+
+- Vocab page → frequent_patterns links to `/learn/grammar/<id>/`
+- Reading passage → vocab_used links to `/learn/vocab/<form>/`,
+  kanji_used links to `/kanji/<glyph>/`
+- Kanji page → lookalikes links to other `/kanji/<glyph>/` pages
+- Meta `summary` stub → per-corpus indexes
+  (`/learn/grammar/`, `/learn/vocab/`, `/kanji/`, etc.)
+
+This produces a fully-crawlable graph where Googlebot can walk from
+any single entry point and discover every content URL.
+
+### F.18.4 Sitemap.xml + robots.txt
+
+Always generate `/Nx/sitemap.xml` listing every mirror URL +
+`/Nx/robots.txt` with a `Sitemap:` directive. Dedupe + sort URLs in
+the sitemap for deterministic output (idempotent re-runs produce no
+diff). Use absolute URLs in the sitemap (e.g.
+`https://example.github.io/JLPTSuccess/Nx/learn/grammar/n5-008/`),
+not relative paths.
+
+At N5 (BUG-010 close-out), the sitemap has 1,373 URLs:
+- 179 grammar (178 patterns + 1 index)
+- 971 vocab (970 unique forms + 1 index)
+- 107 kanji (106 + 1 index)
+- 55 reading (54 + 1 index)
+- 51 listening (50 + 1 index)
+- 10 meta routes
+
+### F.18.5 Stages — recommended sequencing
+
+The full surface is large (1,373 URLs at N5; Nx will be similar or
+larger). A staged rollout is operationally safer than a single big
+bang:
+
+1. **Stage 1 — Grammar.** Highest-traffic surface; validates the
+   path structure + chrome.
+2. **Stage 2 — Vocab.** Largest by count; tests Unicode path
+   handling at scale.
+3. **Stage 3 — Kanji.** Tests glyph-as-URL-segment encoding.
+4. **Stages 4 + 5 — Reading + Listening.** Often share the
+   mondai-grouped index shape; commit together.
+5. **Stage 6 — Meta routes.** Markdown→HTML for README/CHANGELOG/
+   PRIVACY/NOTICES + static stubs for interactive views (test /
+   sitting / missed / summary explain why they require JS).
+6. **Stage 7 — Close-out.** Mark the bug Fixed; update sitemap
+   coverage assertions; Rule-4 doc propagation.
+
+Each stage gets its own commit (CI green after every commit).
+Idempotent re-runs let CI verify the artifact is current without
+forcing regeneration.
+
+### F.18.6 Generator architecture
+
+Single Python tool: `tools/build_static_mirrors.py`. Each surface
+gets its own `build_<surface>(sitemap_urls) -> (written, unchanged,
+total)` function. The sitemap accumulator is passed by reference so
+each stage appends URLs to a single list, which is sorted + deduped
+in the final `write_sitemap()`.
+
+Idempotency rule: `_write_if_changed(path, content)` only writes
+when content differs from disk; second invocation on unchanged
+inputs produces `0 written`.
+
+Markdown→HTML for meta-route .md files: a minimal in-house renderer
+(headings, lists, paragraphs, inline code/bold/italic/links, code
+fences) avoids the external dependency cost. Suffices for
+CHANGELOG / PRIVACY / NOTICES / README.
+
+### F.18.7 What this DOES NOT cover (acknowledged debt)
+
+- **Playwright snapshot comparison gate.** BUG-010's acceptance
+  criteria named this as the build-time consistency check
+  (assert mirror content matches SPA-rendered output). Not yet
+  wired; queued as follow-on work.
+- **Per-page Open Graph images.** Current implementation uses a
+  single shared `icon-512.png` for og:image across all pages.
+  Per-page imagery (auto-generated cards with pattern name +
+  meaning, kanji glyph + readings) is an enhancement.
+- **Hindi locale variants for non-meta surfaces.** Grammar and
+  vocab data carry per-entry `meaning_hi` / `gloss_hi`, but the
+  static mirrors only emit `index.html` (English) today.
+  `index.hi.html` per surface is the next iteration.
+- **CI invariant for mirror presence.** A JA-NN gate asserting
+  every grammar pattern / vocab form / kanji glyph has a
+  corresponding mirror file should be added after the data
+  surfaces stabilize.
+
+**Cross-reference:** BUG-010 close-out in
+`N5/feedback/n5-audit-2026-05-04.xlsx` (2026-05-16, status Fixed).
+Tool: `tools/build_static_mirrors.py`. Six staged commits:
+`1ca8173` (grammar), `06dd57b` (vocab), `dbdd96d` (kanji),
+`4419efc` (reading + listening), `75d0ec1` (meta routes), final
+close-out commit (after this F.18 propagation).
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
@@ -6743,9 +6931,17 @@ rewrite pass (banned-phrase list for audit docs, "saturated" always
 qualified as "against current pattern set").
 Extended 2026-05-16 with F.15 (verb-class particle disambiguation
 from BUG-002), F.16 (static HTML mirrors for SPA hash routes from
-BUG-001), and F.17 (seven native-teacher bug classes from
-BUG-003 through BUG-009 — cross-pattern explanation contamination,
+BUG-001), F.17 (seven native-teacher bug classes from BUG-003
+through BUG-009 — cross-pattern explanation contamination,
 mora-count systematic error, pattern-instance contamination,
 RIGHT/WRONG framing for valid alternatives, folk-linguistic grammar
-terminology, pattern-particle mismatch in canonical examples).*
+terminology, pattern-particle mismatch in canonical examples), and
+F.18 (full-surface generalization of the static-mirror pattern from
+F.16, addressing BUG-010 — every SPA route surface gets a crawlable
+static mirror with route-specific metadata, sitemap.xml, robots.txt,
+and cross-surface linking; six-stage rollout sequence; meta-route
+markdown-to-HTML pattern for README / CHANGELOG / PRIVACY / NOTICES;
+documented gaps include per-page OG images, Hindi locale variants
+for non-meta surfaces, Playwright snapshot CI, and a mirror-presence
+CI invariant).*
 
