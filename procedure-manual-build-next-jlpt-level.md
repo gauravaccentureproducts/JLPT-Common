@@ -7860,6 +7860,241 @@ invariant is technical debt.
 New CI invariants JA-104, JA-105, JA-106. Fix script:
 `tools/fix_bugs_041_to_046_reading_json_2026_05_17.py`.
 
+## F.24 Listening-corpus migration drift — same meta-class on a different corpus (BUG-047..053, added 2026-05-17)
+
+**Failure shape (same as F.23):** a multi-phase corpus
+modification (here: a round-9 migration from edge-tts to
+VOICEVOX) completes in some fields but does not propagate to
+others. The split between "migrated" and "stale" fields is
+uniform across all N items (50 listening drills) — the
+signature of batch-drift, not random noise. The stale fields
+remain plausible at schema validation time because the
+permissive schema accepts both shapes; downstream consumers
+either pick the wrong source or display contradictory
+information.
+
+**N5 instance:** a 2026-05-12 VOICEVOX migration on
+`data/listening.json` updated `audio_render_meta` with the new
+provider, speaker IDs, and rendered_at timestamp on all 50
+items. But the upstream `voice_planned.engine` field stayed at
+`"edge-tts"` (the pre-migration plan); items 41-50 had stale
+audit-status fields (`pacing_status="no_audio"` /
+`voice_variety_status=None` despite being rendered); the
+`_meta.voice_variety_plan` block still described VOICEVOX as
+"future work"; the `voicevox_speaker_catalog` had wrong
+character→ID mappings; and a separate dual-field bug
+(`format` ↔ `format_type` 1:1 redundancy) was discovered in
+the same audit pass.
+
+The 7 specific divergences appear in §F.24.1..F.24.6 below.
+§F.24.7 captures the cross-cutting lesson (which extends
+§F.23.7).
+
+### F.24.1 Multi-source drift on a single attribution field (BUG-047)
+
+**Failure shape:** two fields on the same record describe the
+same attribute (here: which TTS engine rendered the audio)
+but were updated by different code paths at different times.
+Post-migration they contradict.
+
+**N5 instance:** every item declared
+`voice_planned.engine="edge-tts"` (the pre-migration plan) AND
+`audio_render_meta.voice_provider="voicevox"` (the post-
+migration reality). The runtime UI rendered the stale engine
+name in the F-10 voice-attribution surface, mis-attributing
+the audio to the wrong vendor.
+
+**Resolution options (per the bug):**
+
+(a) Rewrite `voice_planned` to mirror
+`audio_render_meta.voice_planned_for_engine`. Keeps the dual
+field; one-shot fix.
+(b) Deprecate `voice_planned` entirely; `audio_render_meta`
+is the source of truth. Requires UI update. Collapses the
+dual-field schema.
+(c) Keep both but reinterpret `voice_planned` as "next-render
+plan" rather than "what was rendered." Documents the schema
+in `_meta`.
+
+**N5 chose (b)** — collapse to a single field. The dual-field
+schema is the structural cause; option (a) just papers over
+the next migration. The UI (`js/listening.js` F-10 voice-
+attribution surface) was updated in the same commit to read
+from `audio_render_meta.voice_provider` and
+`audio_render_meta.voice_planned_for_engine.{F,M}.character`.
+
+**CI invariant pattern:** strict "field absent" check on the
+deprecated key. (N5's JA-110.)
+
+**Authoring rule:** when a corpus migration changes a value's
+ground truth, the pre-migration field is no longer
+authoritative — it's stale plan documentation. Drop it in the
+same commit as the data migration; don't leave it for "later."
+
+### F.24.2 Audit-status fields drift behind the data they describe (BUG-048)
+
+**Failure shape:** a "current state" status field (e.g.,
+`pacing_status="no_audio"`, `voice_variety_status=None`) was
+set BEFORE the work it describes was done. The work landed
+(audio rendered) but the status field was never refreshed.
+
+**N5 instance:** items 41-47 had `pacing_status="no_audio"`
+but `audio_render_meta.rendered_at` was populated; items
+48-50 had `voice_variety_status=None` with the same rendered
+state. Audio existed, but the status field claimed otherwise.
+
+**Resolution:** sweep every item where `audio_render_meta.
+rendered_at` is set and refresh the status fields to reflect
+reality. For pacing-not-yet-measured items, "unmeasured" (not
+"no_audio") is the correct status.
+
+**Authoring rule:** any code that produces a side effect
+(audio render, transcript alignment, pitch analysis) must
+update the corresponding status field IN THE SAME PASS.
+Don't ship "produce side effect" and "update status" as
+separate steps — they drift.
+
+### F.24.3 Operational deferral that needs corpus-level surfacing (BUG-049)
+
+**Failure shape:** a corpus-quality issue that requires a
+heavier fix (here: audio re-render at a higher speed_scale)
+is correctly diagnosed but the fix can't land in the
+discovery batch because it needs external resources
+(VOICEVOX install, ~30 min budget). If the issue is just
+verbally noted in a tracker, it gets lost.
+
+**N5 instance:** 26/50 items had pacing_morae_per_min below
+the JLPT N5 target band of 180-240 (mean observed: 160.2
+mpm). Some items were 5× slower than exam pace
+(n5.listen.012 at 38.4 mpm). The fix needs VOICEVOX re-render
+at speed_scale ~1.3.
+
+**Resolution:** surface the issue **inside the data file**.
+N5 added `_meta.pacing_fix_status` carrying the bug ID, the
+observed distribution, the required fix action, and the
+target band. Downstream tools (audit scripts, future
+re-render scripts) read the surfaced status block and act on
+it. The bug tracker entry stays Open.
+
+**Authoring rule:** corpus-level deferred actions go in
+`_meta.*_fix_status` blocks, not just in the bug tracker.
+The data file is the durable record; trackers are session-
+scoped and easily lost.
+
+### F.24.4 Dual-field redundancy (a third instance) (BUG-051)
+
+**Failure shape:** two fields encode the same conceptual
+information with perfect bijection. Same pattern as BUG-044
+(reading.json `format_type` ↔ `format_role`).
+
+**N5 instance:** listening.json items carried both `format`
+(short) and `format_type` (descriptive) with strict 1:1
+mapping: `task↔task_understanding`, `point↔point_understanding`,
+`utterance↔utterance_expression`, `response↔immediate_response`.
+
+**Resolution:** drop the shorter / less descriptive field
+(`format`); `format_type` is canonical with a closed enum.
+JS consumers (`listening.js` `byFormat` grouping +
+`search.js` haystack) updated to use `format_type`.
+
+**CI invariant pattern:** same as JA-106 (closed-enum on
+the surviving field) + a strict "field absent" check on the
+deprecated field. (N5's JA-111.)
+
+**Authoring rule:** if you're adding a new field with values
+that can be derived from an existing field (or vice versa),
+don't. Pick one. The dual-field schema invites the exact
+drift that BUG-044 / BUG-047 / BUG-051 all demonstrate.
+
+### F.24.5 Plan-document drift after the plan is executed (BUG-052)
+
+**Failure shape:** an "approach document" embedded in the
+data (here: `_meta.voice_variety_plan`) describes a planned
+migration. The migration completes. The plan document
+isn't updated — it still reads as future work.
+
+**N5 instance:** `_meta.voice_variety_plan` described
+VOICEVOX as "to be authored when VOICEVOX is installed" with
+a render_command_template using future-tense language. The
+2026-05-12 render had already executed.
+
+**Resolution:** rewrite the plan as a past-tense completion
+record with `status="completed_<date>"`, capture the
+observed-vs-target distribution, and mark the prior version
+as superseded (don't delete it — historical context has
+value).
+
+**Authoring rule:** plan-block schema should distinguish
+"planned / in-progress / completed / deprecated" explicitly.
+A `status` field forces the question at every commit.
+
+### F.24.6 Reference-data inaccuracy in a metadata catalog (BUG-053)
+
+**Failure shape:** a metadata catalog mapping IDs to
+human-readable names was authored with WRONG name→ID
+correspondences. The IDs were correct (VOICEVOX speakers
+2/3/8/11/13 exist) but the character-name labels attached to
+them were drawn from a different source list and didn't
+match.
+
+**N5 instance:** the prior catalog listed:
+- ID 8 = "hau-tsumugi" (actually 春日部つむぎ; "hau-tsumugi"
+  is ID 10 = 雨晴はう)
+- ID 11 = "shirakami-kotaro" (actually 玄野武宏; a different
+  speaker entirely)
+- ID 13 listed under "12" as "aoyama-ryusei"
+
+The audit ran against the actual rendered audio
+(`audio_render_meta.voices_used`) to determine the real
+mappings, then rewrote the catalog.
+
+**Resolution:** cross-reference the metadata catalog against
+the upstream source (here: VOICEVOX engine's `/speakers`
+endpoint or the actual `voices_used` field on rendered
+items). Use the upstream source as ground truth, not a
+copy-paste from a different blog post / docs page.
+
+**Authoring rule:** metadata catalogs that mirror an external
+system must be derived from the external system, not
+hand-authored. If derivation isn't practical, at minimum
+add a "verified against <source> on <date>" stamp + a CI
+check that re-derives and compares.
+
+### F.24.7 Meta-lesson — extending F.23.7 to a different corpus
+
+The 7 BUG-047..053 bugs are NOT a separate class from BUG-041..
+046; they're the SAME class (corpus-migration drift) on a
+different corpus + a different migration. F.23.7's detection
+signal — "if `corpus[i]` differs from `corpus[j]` on a field's
+shape/value-class AND the split lines up cleanly with a
+metadata facet, suspect batch-drift" — applies here. The
+metadata facet was "what was migrated to VOICEVOX vs what
+wasn't" rather than "earlier authoring batch vs later batch,"
+but the structural shape is identical.
+
+**Generalized operational rule** (replaces F.23.7's
+batch-specific phrasing): after any corpus-level migration or
+batch-modification pass, run a same-shape audit not just on
+the data items themselves but on EVERY field that references
+the migrated state — `_meta` blocks, audit-status fields,
+sibling fields with overlapping semantics, plan documents,
+and metadata catalogs. The audit must run BEFORE the migration
+batch merges, not after a downstream consumer breaks.
+
+**Cross-reference:** BUG-047 through BUG-053 close-out in
+`N5/specifications/test-scenarios-by-specialist-perspective.xlsx`
+"User Reported Bugs" sheet (2026-05-17). BUG-050 already-fixed
+in commit cdef185 (Rule-5 install, version.json count drift).
+BUG-049 stays Open (needs audio re-render). New CI invariants
+JA-110, JA-111. Fix script:
+`tools/fix_bugs_047_to_053_listening_json_2026_05_17.py`.
+JS source updates: `N5/js/listening.js` (voice-attribution
+surface re-wired to read from audio_render_meta; FORMATS map
+rekeyed to format_type) + `N5/js/search.js` (haystack updated).
+Minified `js/min/*.js` regenerated via
+`tools/build_min_js.py`. Static mirrors regenerated via
+`tools/build_static_mirrors.py` (50 listening pages rewritten).
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
@@ -7956,5 +8191,23 @@ must accept terminator punctuation from every locale in the
 field, not just the "primary" one — Devanagari danda `।`
 slipped past a `。`-only regex on first run. New CI invariants
 JA-104 (difficulty enum), JA-105 (vocab_preview shape), JA-106
-(format_type enum).*
+(format_type enum).
+Extended 2026-05-17 with F.24 — listening-corpus migration
+drift (BUG-047..053). Same meta-class as F.23, different
+corpus and different migration trigger: a 2026-05-12 VOICEVOX
+migration completed on `audio_render_meta` but left
+`voice_planned` (BUG-047), audit-status fields on items 41-50
+(BUG-048), the _meta.voice_variety_plan block (BUG-052), and
+the voicevox_speaker_catalog (BUG-053) stale. Plus a separate
+dual-field redundancy (BUG-051, format ↔ format_type) and an
+operational deferral (BUG-049 pacing systematically too slow,
+needs audio re-render). BUG-050 was already-fixed by the Rule-5
+install commit cdef185. New CI invariants JA-110 (no
+voice_planned) + JA-111 (no format; format_type closed enum).
+Generalized operational rule (replaces F.23.7's batch-specific
+phrasing): after any corpus-level migration or batch-mod pass,
+run a same-shape audit not just on the data items but on every
+field that references the migrated state — _meta blocks,
+audit-status fields, sibling fields with overlapping semantics,
+plan documents, and metadata catalogs.*
 
