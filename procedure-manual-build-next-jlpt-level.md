@@ -7623,6 +7623,243 @@ Fixed). New CI invariants JA-100, JA-101, JA-102. Fix scripts:
 `tools/fix_bug_021_primary_reading_kun_2026_05_17.py`,
 `tools/fix_bug_022_kanji_examples_form_field_2026_05_17.py`.
 
+## F.23 Reading-corpus batch-drift (BUG-041..046, added 2026-05-17)
+
+**Failure shape (the meta-class):** a corpus is built in two
+phases. Phase 1 establishes a convention (field name, value
+semantics, shape). Phase 2 — sometimes months later, often by
+a different contributor or LLM session — adds new entries
+using a DIFFERENT convention. Both phases pass schema
+validation because the schema is permissive or undocumented
+for that field. The drift goes undetected until a downstream
+consumer hits a value it doesn't recognize.
+
+**N5 instance:** reading.json's first 45 passages (`n5.read.001`
+..`045`, the original batch) used one set of conventions. The 9
+newest passages (`n5.read.046`..`054`, a later batch) used
+different conventions across SIX fields. The discrepancies were
+uniform within each batch — the signature is NOT random
+authoring noise, it's a clean split. The original conventions
+were never captured as machine-enforceable invariants, so the
+permissive schema absorbed the drift silently.
+
+The 6 specific divergences appear in §F.23.1..F.23.6 below.
+F.23.7 captures the cross-cutting batch-drift detection rule.
+
+### F.23.1 Legacy enum field with mixed semantics (BUG-041)
+
+**Failure shape:** a single field carries 3+ unrelated
+semantic axes (e.g. "difficulty AND level AND passage-type"
+as enum values). Different authoring passes pick different
+axes. The field becomes uninterpretable without knowing the
+provenance of each entry.
+
+**N5 instance:** reading.json passages used `level` with FOUR
+mixed-semantics values:
+
+- 45 passages: `level: "easy"` or `level: "medium"` (the
+  field's intended use — difficulty)
+- 9 passages: `level: "N5"` (using the field for JLPT-level
+  bookkeeping — redundant with the corpus's own filename)
+- A subset: `level: "info-search"` (using the field for
+  passage TYPE — already captured in `format_role`)
+
+**Resolution:** rename to `difficulty` with a closed enum
+`{easy, medium, hard}`. Map `"N5"` → `"medium"` (the 9 newest
+passages tested at the corpus's nominal level). Drop entries
+whose `level` was capturing a passage type (covered by
+`format_role`).
+
+**CI invariant pattern:** `difficulty ∈ {easy, medium, hard}` —
+strict-equality. (N5's JA-104.)
+
+**Authoring rule:** a single field cannot mean "difficulty AND
+JLPT-level AND passage-type." When you find a field carrying
+3+ meanings, decompose. Difficulty stays in `difficulty`,
+level is the corpus filename, passage type is `format_role`.
+
+### F.23.2 Multi-language fields without explicit locale separation (BUG-042)
+
+**Failure shape:** a single text field carries content in
+multiple languages, separated by an inline delimiter like
+parens or slashes. Consumers that want only one language must
+parse the field; consumers that don't know about the embedded
+languages display garbage; locale-specific fields and inline
+copies drift apart over time.
+
+**N5 instance:** reading.json's `summary` field carried mixed
+JA + EN + HI content across 45 passages in the shape
+`"じこしょうかい (self-introduction विषय परिचय)।"`. The 9 newest
+passages carried JA only. Hindi was ALSO present in a separate
+`summary_hi` field, so the inline HI was a double-encoding bug
+on top of the language-mixing.
+
+**Sub-lesson (terminator-character variants):** the regex that
+normalized the summaries had to accept the Devanagari danda
+`।` (U+0964), the Japanese full-stop `。` (U+3002), the ASCII
+period `.`, or no terminator at all — the 45 mixed-language
+summaries all ended with `।` (carried over from the HI half).
+An over-narrow regex that only allowed `。` matched 0 of 45
+entries on first run; the fix required broadening the
+terminator character class. **Generalization:** when string-
+parsing multi-locale data, expect punctuation from any of the
+locales involved, not just the "primary" one.
+
+**Resolution:** normalize `summary` to JA-only. Extract the
+parenthetical (which contained EN + a stale HI fragment) and
+move EN to a new `summary_en_extracted` field. The canonical
+HI remains in `summary_hi`.
+
+**Authoring rule:** locale-specific content goes in
+locale-suffixed fields. Never inline multiple languages in one
+field with positional delimiters. Other-locale "translations"
+captured inline are SECONDARY content and indicate a missing
+locale field.
+
+### F.23.3 _meta documentation drift (BUG-043)
+
+**Failure shape:** the corpus's own self-description in
+`_meta.schema_additions` falls out of sync with the actual
+schema after fixes land. New consumers reading the meta to
+understand the corpus structure get stale information.
+
+**N5 instance:** reading.json's `_meta.schema_additions` did
+not list `format_type: "notice"` (one of the three info-search
+subtypes actually present in the data) and still referenced a
+`comprehension` format_type that BUG-044 was removing.
+
+**Resolution:** rewrite `_meta.schema_additions` to reflect
+the post-fix shape. Include the BUG-041 (difficulty),
+BUG-042 (locale-suffixed summary fields), and BUG-045
+(vocab_preview shape) migrations in the description.
+
+**Authoring rule:** when a fix changes a field's shape, update
+`_meta` IN THE SAME COMMIT. Treat _meta as data, not
+documentation — it's loaded by consumers. (Companion to
+F.22.5's "re-derive consumer corpora" rule: same problem
+class, different layer.)
+
+### F.23.4 Conceptual field duplication across two key names (BUG-044)
+
+**Failure shape:** two fields with overlapping semantics
+co-exist on the same record. Sometimes both are set (and
+agree); sometimes only one is set; sometimes both are set but
+contradict. Consumers must pick one; the choice is undocumented.
+
+**N5 instance:** reading.json carried both `format_type` and
+`format_role` on the same passages. For 9 passages, both
+fields had the value `"comprehension"` — the passage TYPE,
+which belongs in `format_role`. `format_type` had an intended
+narrower use: the visual SUBTYPE of info-search passages
+(`schedule_table` / `menu_list` / `notice`). The
+"comprehension" value for `format_type` was bleed from
+`format_role`.
+
+**Resolution:** keep `format_type` for the narrow
+info-search-subtype semantic; drop it from comprehension
+passages (where it was redundant with `format_role`). Lock
+`format_type ∈ {null, schedule_table, menu_list, notice}`.
+
+**CI invariant pattern:** strict closed-enum on `format_type`
+including `null` for non-applicable passages. (N5's JA-106.)
+
+**Authoring rule:** when two fields have overlapping semantics,
+write a 1-sentence definition for each (using just the words
+"this means X and ONLY X"). If you can't, collapse them into
+one field.
+
+### F.23.5 Field-shape divergence (BUG-045)
+
+**Failure shape:** a list-typed field has two shapes across
+the corpus: Shape A (list of primitives) vs Shape B (list of
+objects with one canonical key). Consumers that expect one
+shape silently break on the other; the embedded-object form
+also denormalizes data that could be resolved via reference.
+
+**N5 instance:** reading.json's `vocab_preview` was a list of
+vocab_id STRINGS on 45 passages (Shape A) and a list of DICTS
+`[{vocab_id, form, reading, gloss}, ...]` on 9 passages
+(Shape B). The dict entries duplicated information already
+resolvable via vocab_id lookup; the duplication risked stale
+data if vocab.json gloss/reading changed but the embedded
+copy didn't.
+
+**Resolution:** normalize to Shape A (list of vocab_id
+strings). Consumers that want the form/reading/gloss can
+resolve via vocab.json. Removes the duplication and avoids
+stale-snapshot drift.
+
+**CI invariant pattern:** strict shape check —
+`vocab_preview` is `list[str]` (not `list[dict]`). (N5's
+JA-105.)
+
+**Authoring rule:** prefer ID-references over embedded copies
+when the referenced data lives elsewhere. The embedded copy is
+a denormalization that has to be maintained in sync — and
+won't be.
+
+### F.23.6 Pronoun-form inconsistency on canonical text (BUG-046)
+
+**Failure shape:** a high-frequency morpheme appears in two
+forms (e.g., kanji vs kana) across the corpus depending on
+which authoring pass produced the entry. The level whitelist
+allows BOTH, so neither is technically wrong — but the
+inconsistency looks unprofessional and complicates pedagogical
+claims about kanji exposure.
+
+**N5 instance:** 45 reading.json passages used わたし (kana);
+9 used 私 (kanji). The N5 kanji whitelist includes 私. The 9
+newest passages were authored after an implicit standardization
+on the kanji form, but the older 45 weren't back-migrated.
+
+**Resolution:** string-replace わたし → 私 across the 45 older
+passages (26 replacements across 23 passages). Update
+`kanji_used` on those passages to include 私.
+
+**Authoring rule:** when a high-frequency morpheme is on the
+level's kanji whitelist AND standard textbooks teach it in
+kanji form, prefer the kanji form. When you change this policy
+mid-corpus, propagate the change to ALL prior entries before
+merging the new batch.
+
+### F.23.7 Meta-lesson — batch-drift detection
+
+The six BUG-041..046 bugs were ONE pattern, not six different
+ones: a later authoring batch (9 passages) used different
+conventions from an earlier batch (45 passages). The
+divergences were uniform within each batch, which is the
+signature of batch-drift (vs. random authoring noise). A
+single-corpus audit that found ONE of these bugs should have
+triggered a "look for the other five" check.
+
+**Detection signal:** if `corpus[i]` has a field set with one
+shape/value-class and `corpus[j]` has the same field with a
+different shape/value-class, AND the split lines up cleanly
+with entry-creation order (or with any other metadata facet
+like author / source / batch ID), suspect batch-drift. Random
+authoring noise spreads across the corpus; batch-drift clusters.
+
+**Operational rule:** after any "add N new entries" pass on a
+corpus that has prior entries, run a same-shape audit against
+the prior batch — for every field on the new entries, does the
+field exist on the prior entries? Does it have the same
+value-shape? Same enum? Same locale split? The audit catches
+the drift at merge time, not 6 months later when a downstream
+consumer breaks.
+
+**CI invariant pattern (general):** for any list-typed,
+enum-typed, or schema-defined field on a corpus that grows
+over time, write a strict-shape invariant (not "permissive
+sample" — strict) at the time the field is introduced. The
+invariant is the contract; the field's appearance without an
+invariant is technical debt.
+
+**Cross-reference:** BUG-041 through BUG-046 close-out in
+`N5/specifications/test-scenarios-by-specialist-perspective.xlsx`
+"User Reported Bugs" sheet (2026-05-17, all Status: Fixed).
+New CI invariants JA-104, JA-105, JA-106. Fix script:
+`tools/fix_bugs_041_to_046_reading_json_2026_05_17.py`.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
@@ -7703,5 +7940,21 @@ n5_compounds arrays were auto-derived from vocab.json BEFORE the
 BUG-018/019 dedup landed; the dedup-cleaned source wasn't
 re-propagated. JA-103 catches the residual subset-gloss
 duplicates. Operational rule: every dedup pass on a source corpus
-must trigger re-derivation of all consumer corpora.*
+must trigger re-derivation of all consumer corpora.
+Extended 2026-05-17 with F.23 — reading-corpus batch-drift
+(BUG-041..046). A single class manifesting in six distinct
+field divergences between the original 45-passage batch and the
+later 9-passage batch: legacy enum with mixed semantics
+(BUG-041), multi-language inline field (BUG-042), _meta
+documentation drift (BUG-043), conceptual field duplication
+(BUG-044), field-shape divergence (BUG-045), pronoun-form
+inconsistency (BUG-046). Lesson: when a corpus grows in
+phases, capture each field's convention as a strict-shape CI
+invariant AT INTRODUCTION; permissive schemas absorb drift
+silently. Sub-lesson (F.23.2): multi-locale string-parsing
+must accept terminator punctuation from every locale in the
+field, not just the "primary" one — Devanagari danda `।`
+slipped past a `。`-only regex on first run. New CI invariants
+JA-104 (difficulty enum), JA-105 (vocab_preview shape), JA-106
+(format_type enum).*
 
