@@ -8372,6 +8372,194 @@ A future engine upgrade may shift per-speaker timing characteristics
 enough to require another Phase-N pass; the methodology
 generalizes but the specific resolution snapshot does not.
 
+## F.28 Multi-role specialist-review-by-tab methodology (added 2026-05-17)
+
+The test-scenarios xlsx splits scenarios across 14 specialist tabs
+(A through N), each tied to a domain expert role (Native Japanese
+teacher, JLPT exam expert, Native Hindi teacher, Security engineer,
+Privacy/legal lawyer, Performance engineer, Data engineer, Pedagogy
+specialist, QA engineer, Cultural reviewer, UX designer,
+Accessibility engineer, Operations engineer, End-user POV proxy).
+
+The N5 session 2026-05-17 ran ALL 720 scenarios across the 15-tab
+xlsx via specialist-role simulation. Lessons:
+
+### F.28.1 Per-role review batch shape
+
+For each role:
+  1. Identify scenarios where this role is the Owner (xlsx col 12).
+  2. Read the Scenario / Test steps / Expected result.
+  3. Apply specialist judgment with explicit reference to credible
+     sources (Genki I, Minna I, JEES official samples, NHK accent
+     dictionary, Hindi Vyakaran, OpenSSF Scorecard, WCAG spec,
+     GDPR/DPDP/COPPA legal texts, CC-BY-SA license terms, etc.).
+  4. Run agent-side checks where possible (grep, data inspection,
+     CI invariant lookup, file-presence verification).
+  5. For findings: file a bug (NR-{ROLE}-{NN} naming convention),
+     apply the fix in the same commit, mark Fixed with Fix Commit
+     cell populated.
+  6. Stamp each scenario with one of the bounded-honest result
+     classifications (F.28.3 below).
+  7. Run CI + cross-artifact-sync-report; both must stay green.
+
+### F.28.2 Bug-ID naming convention
+
+NR- (Native Reviewer) + role tag + sequence number:
+  NR-{Japanese teacher = no tag}-NNN (e.g. NR-001 through NR-005)
+  NR-HI-NNN  (Hindi reviewer)
+  NR-JE-NNN  (JLPT exam expert)
+  NR-SEC-NNN (Security engineer)
+  NR-LIC-NNN (Privacy/legal lawyer)
+  NR-DATA-NNN (Data engineer)
+  NR-UI-NNN  (UI engineer)
+  Future: NR-PERF / NR-A11Y / NR-OPS / NR-CULT / NR-UX / NR-PED / NR-QA / NR-EUP
+
+### F.28.3 Bounded-honest stamping conventions
+
+When stamping scenarios as PASS, qualify what was actually verified:
+
+| Stamp label | Meaning |
+|---|---|
+| `PASS` | Verified by runnable check or CI invariant. |
+| `PASS (limited verification)` | Code-grep / data-inspection only; no runtime / visual / user verification. |
+| `PASS (architectural)` | Verified via architecture-level reasoning (e.g., static-only hosting = no POST endpoints). |
+| `PASS (per JEES sample paper)` | Verified against credible source but not exhaustively. |
+| `PASS (spot-check; full review deferred)` | Sampled but not exhaustively native-reviewer-reviewed. |
+| `PASS — with finding (intentional design)` | Surfaced a quirk that's design-justified. |
+| `PASS (computed; not browser-measured)` | Measured via file-size math; not on actual devices. |
+| `PASS (vacuous — no <X>)` | N/A given privacy / architectural posture. |
+| `PASS (per-item; per-utterance not measured)` | Surface metric balanced, deeper metric not measured. |
+| `Manual — deferred (<reason>)` | Requires runtime / visual / user / specialist; agent-side gap. |
+| `Skipped — external` | External tool not installed locally (Lighthouse, npm audit, GitGuardian). |
+| `Skipped — no learner data` | Requires accumulated learner attempt data. |
+| `Skipped — no runner` | Tools/scripts cell empty; nothing to execute. |
+| `FAIL` | Real failure; surface as bug. |
+| `PASS — with finding` | Verified passing AFTER bug found + fixed in same batch. |
+| `Blocked — depends on <X>` | Dependent on artifact not shipped (e.g., Hindi audio). |
+
+### F.28.4 Brutal-honesty re-audit class
+
+After a pass with stricter-classification stamps lands, run a
+brutal-honesty re-audit:
+  - Re-execute deep scans (full corpus, not 30-sample) for each
+    domain.
+  - Re-classify previously-PASS stamps with bounded qualifiers
+    when the original PASS rested on less-than-runtime verification.
+  - File any NEW findings as new bugs.
+  - The honest re-stamping is a deliverable in itself — future
+    auditors get accurate ground-truth on what was actually verified
+    vs taken on faith.
+
+### F.28.5 Cross-artifact propagation
+
+Every NR-* bug filed must trigger the Rule 4 / Rule 5 sync (see
+parent CLAUDE.md). Specifically:
+  - Bug entry on User Reported Bugs sheet with Fix Commit + Fix Date
+  - Scenario stamp on the relevant specialist tab
+  - Optional: new CI invariant if the bug class can recur
+    mechanically
+  - Spec / sync-map / CHANGELOG entry
+
+## F.29 Selenium UI test class — E2E coverage of every functional surface (added 2026-05-17)
+
+Adds an end-to-end UI test class running Selenium 4 (headless
+Chrome via Selenium Manager auto-driver) against the live local
+HTTP server. Tests every functional surface from
+spec §5 (Home / Learn hub / per-module routes / Mock Test /
+Practice / Settings / etc.) plus static-mirror surfaces, sitemap,
+robots.txt, accessibility landmarks, security headers, Service
+Worker, audio reachability, locale parity, and console-error
+absence.
+
+### F.29.1 Why Selenium 4 (vs Playwright / BrowserStack)
+
+  - Selenium 4 ships Selenium Manager — auto-downloads the right
+    chromedriver, no manual driver-install step. Runs in a CI
+    Python container without browser-stack credentials.
+  - Playwright is excellent but requires `playwright install` step
+    (~200 MB browser download). Selenium Manager reuses the OS's
+    installed Chrome.
+  - BrowserStack (already wired in workflows) covers cross-browser
+    via remote — Selenium runs the same suite on the local browser.
+
+### F.29.2 What the test class covers
+
+| Surface | Tests |
+|---|---|
+| Spec §5 functional routes | 5.1 (Home) / 5.3-5.8 (per-module) / 5.9-5.16 (Drill / Review / Missed / Summary / Settings / Sitting / Today / Privacy / Notices) |
+| Static-mirror routes | /home/, /changelog/, /privacy/, /notices/, /learn/grammar/<id>/, /lessons/<id>.html (legacy), /reading/<id>/, /listening/<id>/, /learn/vocab/<form>/ (URL-encoded), /kanji/<glyph>/ (URL-encoded), + 5 index pages |
+| SEO | sitemap.xml + robots.txt |
+| Accessibility | <html lang>, skip-link, <title>, <main> landmark, aria-live |
+| Security | CSP meta + X-Frame-Options meta (the latter being design-limited per NR-UI-001) |
+| PWA | Service Worker API + registration |
+| Audio | MP3 reachability + audio_manifest.json |
+| i18n | Locale switch presence + locales/{en,hi}.json key parity |
+| Console health | 0 SEVERE console errors |
+
+### F.29.3 Critical NR-UI-001 lesson
+
+Some defense-in-depth HTTP security headers are HTTP-header-only
+per browser spec — they're IGNORED when delivered via <meta>:
+
+  - `frame-ancestors` (CSP directive): only honored as HTTP header
+  - `X-Frame-Options`: only honored as HTTP header
+
+The N5 session originally added these via <meta> in commit
+46be3e1 (NR-SEC-002), believing it would provide clickjacking
+defense. Selenium console-error capture on every route load
+exposed the cosmetic-fix nature (the browser fired SEVERE
+console errors on every page).
+
+Lesson: **always verify security-header effectiveness via
+runtime browser check, not just by source-code inspection.**
+
+For Nx builders on static hosting (GitHub Pages / Cloudflare
+Pages / Netlify):
+  - Honored via <meta>: CSP `default-src` / `script-src` /
+    `connect-src` / `style-src` / `form-action` / etc.;
+    Permissions-Policy; Referrer-Policy
+  - NOT honored via <meta>: CSP `frame-ancestors`;
+    X-Frame-Options
+  - When clickjacking defense is needed: move to a host that
+    exposes HTTP-header config (Cloudflare Pages with rules /
+    Netlify _headers file / Vercel headers in vercel.json).
+
+### F.29.4 Procedure (for Nx UI tests)
+
+```bash
+# 1. Install Selenium 4 + ensure Chrome is installed:
+pip install selenium  # (already in requirements / pyproject)
+
+# 2. Serve the project at production-equivalent root:
+cd JLPT-Common-repo-root  # to keep ../assets/ paths working
+python -m http.server 8765 &
+
+# 3. Run the test suite:
+python Nx/tools/ui_test_suite_YYYY_MM_DD.py
+# Output: 55+ scenarios stamped; PASS / FAIL / SKIP per scenario;
+# JSON persisted to tools/ui_test_results_YYYY_MM_DD.json
+
+# 4. Console-error capture (catches issues missed by visual checks):
+python Nx/tools/dump_console_errors.py
+
+# 5. For each FAIL: file bug, apply fix, re-run.
+
+# 6. Add results to test-scenarios xlsx "UI Tests" tab via
+#    tools/add_ui_tests_tab_YYYY_MM_DD.py.
+```
+
+### F.29.5 Bounded-coverage phrasing for UI tests
+
+  - "UI test suite verifies <N> scenarios *served from a local HTTP
+    server matching production URL structure*" — not "verifies UI
+    end-to-end".
+  - "0 SEVERE console errors *post NR-UI-001 fix*" — not "0
+    SEVERE console errors" (the meta-tag-ignored class was
+    surfaced + retired in this batch).
+  - Local server must serve from a root where `../assets/` paths
+    resolve (i.e., JLPTSuccess/ root, not N5/ root) to avoid
+    false-positive 404s on shared brand assets.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
@@ -8500,5 +8688,18 @@ without restructuring the corpus, leaving the baseline file as
 a RESOLVED snapshot), and F.27 (from-source TTS re-render at
 unified speed_scale supersedes stacked post-processing — when
 to invoke a full re-render vs continued patching, plus the
-provenance value of "one render, one filter" per item).*
+provenance value of "one render, one filter" per item).
+Extended further 2026-05-17 with F.28 (multi-role specialist-
+review-by-tab methodology — bounded-honest stamping conventions
+covering 11+ specialist roles; brutal-honesty re-audit pattern
+for stricter ground-truth classification; NR-{ROLE}-NNN bug
+naming convention; cross-artifact propagation per Rule 4/5)
+and F.29 (Selenium UI test class — end-to-end E2E coverage of
+every functional surface in spec §5 + the static-mirror
+surfaces + sitemap + a11y + security headers + Service Worker +
+audio + i18n + console-error-zero verification; critical
+NR-UI-001 lesson that some defense-in-depth security headers
+(frame-ancestors, X-Frame-Options) are HTTP-header-only and
+IGNORED via <meta> — always verify runtime effectiveness, not
+just source presence).*
 
