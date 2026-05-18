@@ -8932,6 +8932,146 @@ sessions (file as REG-NNN follow-up bugs).
     phrases*" — not "all register-conflations in N5". The deeper
     sweep (SWEEP-2..5) is scoped as native-speaker review work.
 
+## F.33 Paper-question schema-discipline — three durable invariants (added 2026-05-18)
+
+DOKKAI-001..003 (BUG-107..109) surfaced 3 schema-discipline classes
+that apply to every paper-bank corpus across Nx levels. Each maps to
+a CI invariant (N5: JA-128 / JA-129 / JA-130) and a generalizable
+fix pattern.
+
+### F.33.1 Class A — Single source of truth for passages
+
+**Symptom:** A reading-comprehension paper stores its passage text
+in two places: as `passages[]` at the paper top-level AND as
+`questions[].passage_text` repeated on every question that references
+the same passage. Over time, the two copies drift — most subtly via
+markdown markers like a leading `> ` blockquote prefix that's on one
+copy but not the other.
+
+**Root cause:** Initial authoring tools convenience-denormalize the
+text onto each question. Later edits (typo fix, prefix cleanup) hit
+one copy but not both. Renderers reading from different sources show
+inconsistent content.
+
+**Fix:** Single source of truth — keep `passages[]` as canonical at
+the paper top-level. Questions reference passages via
+`passage_label` foreign key. Drop `passage_text` from question
+objects entirely. Renderer joins at display time.
+
+**Detection (CI invariant JA-128):** Substring-grep every paper file
+for `passage_text` as a question-level key. Trip on any presence.
+
+**Same drift-risk class as:** KANJI-001 / KANJI-004 (kanji.json
+compound forms vs vocab.json form), VOCAB-002 (counter field shape),
+LISTEN-001 (voice_planned vs audio_render_meta), INV-4 / JA-107
+(version.json counts vs corpus). All share the "data in two places →
+inevitable drift" anti-pattern.
+
+**Horizontal-deployment note:** When a paper-bank already exists
+WITHOUT a `passages[]` block (e.g., bunpou Mondai-3 paragraph
+gap-fill questions that only have `passage_text` per question), the
+fix is to CREATE the `passages[]` block from the unique passage_text
+values + their `passage_label` foreign keys. This was the case for
+bunpou/paper-7.json in the 2026-05-18 N5 close-out — 10 Mondai-3
+questions referencing 2 distinct passages got their canonical
+`passages[]` block created on first migration.
+
+### F.33.2 Class B — English-fragment temporal markers in rationale_hi
+
+**Symptom:** A learner-facing `rationale_hi` Hindi explanation
+contains untranslated English temporal markers like " ago", " yet",
+or " lot" — usually a carry-over from word-by-word translation
+where the Hindi sentence-order pattern made the English word fall
+through untranslated.
+
+**Examples observed:**
+  - `भूत-सकारात्मक रूप (आया एक महीना ago)।` → fix: `भूत-सकारात्मक: एक महीना पहले आया`
+  - `यहाँ के लिए 1 वर्ष = आया 1 वर्ष ago।` → fix: `यहाँ एक साल से = एक साल पहले आया`
+
+**Fix:** Rewrite with natural Hindi using the appropriate target-
+language idiom (`पहले` for "ago / before", `अभी तक नहीं` for "not
+yet", etc.). Set `rationale_hi_provenance = "native_reviewed_<DATE>"`.
+
+**Detection (CI invariant JA-129):** Substring-grep for the trigger
+set: ` ago ` / ` ago.` / ` ago,` / ` ago)`, ` yet ` / ` yet.` /
+` yet,` / ` yet)`, ` lot ` / ` lot.` / ` lot,`. Conservatively skip
+` before ` and ` then ` (legitimate in technical fragments).
+
+**Same class as:** PAPER-004 (JA-122 apostrophe-s / contractions /
+mojibake) — JA-129 is the extension catching temporal markers that
+JA-122 doesn't cover.
+
+### F.33.3 Class C — Schema-shape: explicit-null vs missing-key
+
+**Symptom:** A field like `grammarPatternId` is present on some
+questions and absent on others, with no documented convention.
+Downstream code can't distinguish "not yet assigned" from
+"intentionally absent — not applicable to this question type".
+
+**Examples:**
+  - dokkai questions: 78/102 had `grammarPatternId`, 24 absent.
+  - goi (vocabulary) questions: 11 absent (vocab questions test
+    word choice, not grammar pattern)
+  - moji (kanji-reading) questions: 72 absent (orthography test,
+    no grammar pattern)
+
+**Fix:** Make the field always-present-as-a-key. When not
+applicable, set value to `null` AND set the provenance field to a
+typed `not_applicable_<reason>` value:
+
+  - dokkai comprehension questions: `not_applicable_comprehension`
+  - goi vocabulary questions: `not_applicable_vocab`
+  - moji orthography questions: `not_applicable_orthography`
+
+This matches the existing VOCAB-002 counter-field pattern (`counter
+is always a key, sometimes null` after the BUG-015 fix).
+
+**Detection (CI invariant JA-130):** For every paper question,
+assert `grammarPatternId in question_keys`. When value is `null`,
+assert provenance starts with `not_applicable`. Catches both the
+missing-key case and the undocumented-null case.
+
+**Same class as:** VOCAB-002 counter (always-a-key-sometimes-null),
+LISTEN-005 (format vs format_type closed-enum), the original
+PAPER-002 (bunpou-4.3 missing grammarPatternId).
+
+### F.33.4 Build script template
+
+The N5 close-out script `tools/fix_dokkai_bugs_2026_05_18.py` is
+~150 lines of mechanical Python. Per-Nx fork:
+
+```
+1. Loop over data/papers/<category>/*.json
+2. Drop questions[i].passage_text (Class A) + normalize passages[].text
+3. Apply category-specific not_applicable_<reason> provenance
+   for null grammarPatternId (Class C)
+4. Per-question rationale_hi rewrites (Class B) — only the named Q-IDs
+   from the bug report; do NOT mass-substitute "ago" → "पहले" globally
+   (risks corrupting any legitimate English-glossing in technical
+   notes)
+```
+
+After the per-paper fixes, run the LLM-surfaces regeneration script
+(F.31) so `data/index.json` byte-sizes don't drift from the file
+changes.
+
+### F.33.5 Bounded-coverage phrasing
+
+  - "JA-128 prevents *passage_text on paper questions*" — not "prevents
+    all paper-data redundancy". A paper that stored other fields
+    redundantly (e.g., choices duplicated into a top-level array)
+    would still pass JA-128; needs separate invariant.
+  - "JA-129 catches *the temporal-marker trigger set*" — not "all
+    untranslated English in rationale_hi". A rationale that says
+    "मैं learn जापानी" slips past. JA-122 covers apostrophe-s and
+    mojibake; JA-129 adds temporal markers. The combined coverage
+    is the rationale-hi guard set; neither is the universal solver.
+  - "JA-130 enforces *grammarPatternId presence + documented null*" —
+    not "enforces correct grammarPatternId value". A question tagged
+    with the wrong pattern_id still passes JA-130 (JA-120 catches
+    Mondai-1 particle alignment; broader correctness is per-entry
+    judgment).
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
