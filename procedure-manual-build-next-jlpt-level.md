@@ -9072,6 +9072,198 @@ changes.
     Mondai-1 particle alignment; broader correctness is per-entry
     judgment).
 
+## F.34 Mobile-UI compliance — touch-target + iOS auto-zoom + route-resolution + locale parity (added 2026-05-19)
+
+The MOB-001..019 (BUG-110..128) batch surfaced 5 durable classes of
+mobile-UI defect that apply to every Nx SPA shipped to mobile users.
+Each maps to a CI invariant (N5: JA-131..134; JA-132 is the
+multi-class CSS-rule check). Same Selenium mobile-emulation pattern
+applies across levels — fork with updated route table.
+
+### F.34.1 Class A — Touch-target HIG compliance
+
+**Symptom:** Interactive elements (buttons, anchor-links, navigation
+items) render below the Apple HIG minimum touch-target size of 44×44
+px on mobile viewports. Bug evidence from N5 audit:
+
+  - `.btn-action` (home CTAs + feedback page actions): 281×36
+  - `.study-order-link` (10 home cards): 328×34
+  - `.back-link` / `.home-up-link a`: 125×20
+  - `.brand-link` (header logo): 54×16
+  - `.skip-link`: 187×41
+  - `.toc-expand-all` / `.toc-collapse-all`: 99×36
+  - Authentic-items page ref-chips: 12×17 to 48×15 (449 elements)
+  - Examday / Weakareas inline "See full bank →": 139-167×15
+
+**Fix:** Single consolidated CSS block at end of `css/main.css`
+that sets `min-height: 44px` (with `padding-block: 10-12px` for
+visual spacing) on every named class. Mirror to `css/main.min.css`.
+
+**Detection (CI: JA-132):** Substring-grep `css/main.css` AND
+`css/main.min.css` for marker comment `MOB-001..016 mobile UI
+compliance batch` + every canonical touch-target class. Trips on
+any removal during a CSS-cleanup pass.
+
+**Anti-pattern:** Don't bump touch-target via `height: 44px`
+explicitly — line-height conflicts and breaks visual density.
+Use `min-height: 44px` + `padding-block` so existing typography
+stays unchanged.
+
+**Bounded coverage:** JA-132 catches *the specific class set named
+in the marker*. New CSS classes added to the SPA after the marker
+was written get no guard — extend the marker list on each
+audit cycle.
+
+### F.34.2 Class B — iOS Safari form-input auto-zoom
+
+**Symptom:** Form inputs (`<input>`, `<textarea>`, `<select>`)
+render at `font-size: 14px` or `0.875rem`. When focused on iOS
+Safari, the browser auto-zooms the viewport (because a font under
+16px would be "too small to read"). The page stays zoomed until
+the user pinches back out. This is a jarring UX regression on
+every form-bearing route.
+
+**Fix:** Site-wide CSS rule:
+
+```css
+input, textarea, select {
+  font-size: max(1rem, 16px);
+}
+```
+
+The `max(1rem, 16px)` form satisfies HIG for users with non-
+default `rem` sizing AND the 16px iOS-Safari threshold. Don't use
+`maximum-scale=1` on viewport meta — worse for accessibility.
+
+**Detection (CI: JA-133):** Search `css/main.css` for the
+`max(1rem, 16px)` substring on a `input,textarea,select` selector.
+
+**Bounded coverage:** N5 already had `#search-input` at 16px
+(header search input). The missing 4 controls were inside
+`#/feedback` (one form on one route). JA-133 catches future
+forms that ship at <16px.
+
+### F.34.3 Class C — Dead-end hash routes
+
+**Symptom:** A hash route exists in href attributes (`<a href="#/X">`)
+that the router does NOT have a handler for. parseRoute() silently
+redirects to a default route (e.g., `#/home` or `#/diagnostic`).
+Users / crawlers following the bookmarked URL land somewhere
+unexpected.
+
+**N5 examples:**
+  - `#/listening/story` — referenced 4× in `js/listening-story.js`
+    but router maps `listeningstory` (no slash). parseRoute parses
+    `#/listening/story/cafe` as `{name: 'listening', params:
+    'story/cafe'}` → renderListening (ignores params) → silent
+    redirect to listening index.
+  - `#/levels` — referenced in `js/home.js` home-up link. parseRoute
+    catches it via `if (hash === '#/levels' || ...)` block and
+    calls `location.replace('../')` → leaves SPA → if first-run,
+    `if (!location.hash)` onboarding redirect kicks in → lands on
+    `#/diagnostic`.
+
+**Fix protocol:**
+  1. Audit every hash-route reference: `grep -rn '#/[a-z]' js/*.js`.
+  2. For each reference, confirm the route exists in `app.js`'s
+     `routes` dict OR the path is a deliberate redirect (e.g.,
+     `../` to a sibling page).
+  3. Canonicalize: pick ONE form per route (no aliases) and update
+     all hrefs to use it.
+  4. For redirect routes (`#/levels` → `../`), change the link's
+     `href` to the destination directly (skip the in-SPA redirect).
+
+**Detection (CI: JA-134):** Substring-grep `js/home.js` for
+`href="#/levels"` (must be `../` post-fix) and
+`js/listening-story.js` for `"#/listening/story"` (must be
+`#/listeningstory` post-fix).
+
+**Bounded coverage:** JA-134 catches *these two specific dead-end
+patterns*. A general "every hash href resolves to a router entry"
+check would require parsing app.js's routes dict at CI time —
+deferred. JA-134 is the targeted-pattern guard.
+
+### F.34.4 Class D — Locale-parity for hard-coded UI strings
+
+**Symptom:** A UI string is hard-coded in a JS template literal
+instead of going through `t('key')` i18n lookup. The string is
+correct in the default locale (en) but stays English when the user
+switches to another locale (hi).
+
+**N5 example:** `js/home.js` home-up-link literal `← All JLPT levels`
+(line 357) was not i18n-wired. Hindi-locale users saw untranslated
+English on the home page despite all other primary nav items
+translating correctly.
+
+**Fix:**
+  1. Add the key to every supported locale (`locales/en.json` +
+     `locales/hi.json` for N5).
+  2. Update the JS to use `t('nav.all_levels')`.
+  3. Run the minify step (e.g., `tools/build_min_js.py`) so the
+     `js/min/home.js` bundle picks up the change.
+
+**Detection (CI: JA-131):** Per-locale check that the `nav.all_levels`
+key is present and non-empty.
+
+**Same shape as JA-108:** broader locale-key-set parity guard.
+JA-131 is the narrower invariant for this specific key because it
+shipped to production once already.
+
+**Bounded coverage:** JA-131 catches THIS specific key. A more
+general invariant would scan all locale files for key drift; JA-108
+already does that. JA-131 is the named-key guard so regressions
+of this specific MOB-007 case surface explicitly.
+
+### F.34.5 Class E — Test-infrastructure / scenario-design gaps
+
+**Symptom:** Mobile-UI tests fail spuriously due to test-framework
+limitations rather than app defects. The fix lives in the test
+scenarios + test runner, not in app code.
+
+**N5 examples:**
+  - **MOB-018:** Selenium 4 + Chrome 148 with
+    `Emulation.setDeviceMetricsOverride mobile=true` makes
+    `window.scrollTo` a no-op. Footer-reachability scenarios can
+    never reach the footer through scroll. Solution: split affected
+    scenarios into "Auto (window-size emulation only, no
+    touch-emulation)" + "Manual (Appium / real device)" variants.
+  - **MOB-019:** Audio-UI scenarios target `#/listening`,
+    `#/listening/story`, `#/reading` index pages — but audio loads
+    only after tapping into a specific item (`#/listening/n5.listen.NNN`).
+    Index pages return 0 audio elements. Fix: re-target scenarios to
+    navigate INTO a representative item before asserting.
+
+**Fix protocol:** these are scenario-content updates, not app-code
+changes. Update the affected scenario rows in the xlsx Mobile UI
+tab. Document in CHANGELOG as "scenario rewrites" (no behavioral
+fix).
+
+**No CI invariant** for this class — it's a test-authoring
+discipline, not a runtime check. Document in the procedure manual
+(this section) so future Nx builders avoid the same false-fail
+trap.
+
+### F.34.6 Build-script template (Nx-builder pattern)
+
+The N5 close-out used:
+
+  - `tools/build_min_js.py` — regenerate `js/min/` after JS changes
+  - `tools/build_min_css.py` — regenerate `css/main.min.css` after
+    CSS changes (if minifier exists; manual append if not)
+  - `tools/build_llm_surfaces_2026_05_18.py` — regenerate
+    `data/index.json` after any data mutation (so JA-125
+    byte-size guard doesn't trip)
+
+Re-run all 3 before committing any data or CSS/JS change. Same
+8-stage architecture as F.31.3.
+
+### F.34.7 Bounded-coverage phrasing
+
+  - "JA-131..134 prevent re-introduction of *the specific bugs MOB-006/007/008/009 closed*" — not "all mobile-UI defects".
+  - "JA-132 catches *the named touch-target class set in the marker comment*" — extension to additional classes requires explicit marker-list updates.
+  - "Selenium mobile-emulation footer-reachability is *not Selenium-testable in current Chrome*" — Manual / Appium fallback documented.
+  - "MOB-010 (sticky header top=16px) declined as P5 design-decision" — borderline by-design; not fixed.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
