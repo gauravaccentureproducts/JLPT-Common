@@ -8560,6 +8560,165 @@ python Nx/tools/dump_console_errors.py
     resolve (i.e., JLPTSuccess/ root, not N5/ root) to avoid
     false-positive 404s on shared brand assets.
 
+## F.30 Paper-question content audit — grammarPatternId / rationale / rationale_hi drift classes (added 2026-05-18)
+
+Adds three drift classes specific to JLPT-paper question banks (Mondai 1
+fill-in-blank, Mondai 2 sentence-ordering, Mondai 3 paragraph-gap). All three
+are silent — the question still plays correctly at quiz time — but break
+downstream consumers and learner trust.
+
+### F.30.1 Drift class 1 — grammarPatternId mis-tagging
+
+**Symptom:** A paper question's `grammarPatternId` field references a
+canonical pattern (e.g., `n5-013` = も) but the correct answer is a different
+particle (e.g., は). Affects study-plan grouping, pattern-frequency analytics,
+"review weak particles" recommendation.
+
+**Root cause:** Early auto-tag pass over a large question bank assigns
+patterns without per-question validation. The default-tag (n5-013 in the N5
+session, "n4-XXX" equivalent in Nx) gets applied wholesale.
+
+**Detection:** For every Mondai 1 question whose correct answer is a single
+particle, the `grammarPatternId` must reference the canonical pattern for that
+particle. The mapping is one-to-one (see §F.30.4) and trivially CI-enforceable.
+
+**Fix protocol:**
+
+1. Build the particle ↔ pattern_id map once (read from the level's
+   grammar.json — Particles category, single-character pattern field).
+2. For each Mondai 1 question, read `correctIndex` + `choices[correctIndex]`;
+   if it's a single particle in the map, set `grammarPatternId` accordingly.
+3. For Mondai 1 questions where the correct answer is NOT a particle
+   (verb/adj/copula form, counter, etc.), manual mapping per stem context.
+4. Mondai 2 sentence-ordering: tag by the central structural pattern being
+   assembled (typically the particle filling the ★ position).
+5. Mondai 3 paragraph-gap: tag by the particle/pattern of the specific blank.
+6. Set `grammarPatternId_provenance = "rule_based_correctanswer_<date>"`.
+
+**CI invariant (N5 numbering — adjust for Nx):** JA-120 enforces particle-Q ↔
+pattern_id alignment.
+
+### F.30.2 Drift class 2 — commit-message-style meta-fix history in rationale
+
+**Symptom:** A question's learner-facing `rationale` or `rationale_hi` field
+contains commit-trail content like "Stem now anchored with わたしは", "(was
+expensive)", "replaces colloquial X from a prior version", "(auto_inferred)".
+
+**Root cause:** When a corpus fix is applied (e.g., particle change, stem
+edit, distractor replacement), the maintainer documents WHY in the rationale
+field — appropriate for a commit message, inappropriate for a learner who
+sees this on the post-answer screen.
+
+**Detection:** Substring-scan rationale fields for: `auto_inferred`,
+`previously tagged`, `prior version was`, `Stem now anchored`, `Stem now
+includes`, `replaces colloquial`, `replaces ので per`, `the original option`,
+`was dropped because`, `replaced with`, `patched to`, `fix:`.
+
+**Fix protocol:**
+
+1. For each finding, isolate the meta-fix parenthetical / sentence.
+2. Strip it from `rationale` AND `rationale_hi`.
+3. Keep ONLY the learner-facing concept explanation.
+4. Move the fix history to:
+   - the commit message, OR
+   - a separate `rationale_revision_note` field if audit-trail preservation
+     is needed.
+5. KEEP useful content even if it looks meta: distractor-analysis comments
+   ("(option 3 is concessive, not causal — would invert logic)") are
+   genuine learner content; don't strip those.
+
+**CI invariant:** JA-121 prevents re-introduction of the meta-fix phrases.
+
+### F.30.3 Drift class 3 — English-pattern rationale_hi (literal translation, not natural Hindi)
+
+**Symptom:** `rationale_hi` reads as word-by-word literal translation of
+`rationale_en` rather than natural Hindi. Common artifacts:
+
+  - Apostrophe-s possessive ("दोस्त's घर", "माता's दिन") — non-existent in
+    Devanagari
+  - English contractions inline ("मैं'm नहीं भूखा yet", "मैं'll") — half-
+    translated artifacts
+  - Mojibake ("यहाँre" = "Are there" partial translation, "o'घड़ी" = English
+    apostrophe with Hindi घड़ी)
+  - English filler words ("वहाँ है lot का बर्फ़ पर top का पहाड़")
+
+**Root cause:** Translation pipeline running word-by-word substitution on
+English rationale instead of producing natural target-language output.
+Manifests as a *quality cliff* in specific sections (e.g., one Mondai 2 batch
+worse than Mondai 1) reflecting different translation runs/dates.
+
+**Detection:** Substring-scan rationale_hi for apostrophe-s patterns,
+"is/are+verb"-form English contractions, mojibake artifacts. Threshold:
+"more than 6 ASCII letters present in a Hindi-script string" is a flag
+(allowing legitimate Japanese-token + Romanized particle references).
+
+**Fix protocol:**
+
+1. For each affected question, take `rationale_en` as the source of truth.
+2. Translate `rationale_en` into NATURAL HINDI (not literal). Test:
+   "Would a Hindi-speaking N5 learner read this fluently?"
+3. Keep Japanese tokens as-is (do NOT transliterate to Devanagari).
+4. Particle names stay as Japanese characters (は / が / を / etc.).
+5. Set `rationale_hi_provenance = "native_reviewed_<date>"`.
+6. **Critical:** verify the new Hindi sentence matches the actual question's
+   stem + correct answer. A natural-sounding Hindi sentence about the wrong
+   question is worse than literal-but-correct content.
+
+**CI invariant:** JA-122 prevents re-introduction of English-pattern
+fragments (apostrophe-s, English contractions, common mojibake artifacts).
+
+### F.30.4 Particle → pattern_id canonical map (N5 reference; mirror in Nx)
+
+| Particle | Pattern ID |
+|---|---|
+| は | n5-002 |
+| が | n5-003 |
+| を | n5-004 |
+| に | n5-005 |
+| へ | n5-006 |
+| で | n5-007 |
+| と | n5-008 |
+| から | n5-009 |
+| まで | n5-010 |
+| や | n5-011 |
+| も | n5-013 |
+| か | n5-023 |
+| ね | n5-025 |
+| よ | n5-026 |
+| の | n5-028 |
+| だけ | n5-033 |
+| ぐらい / くらい | n5-035 |
+| ごろ | n5-036 |
+| など | n5-037 |
+| ずつ | n5-038 |
+| より | n5-095 (comparison) |
+
+Build the equivalent table for Nx from `data/grammar.json` Particles category
+(filter to single-character pattern fields).
+
+### F.30.5 Bounded-phrasing for paper-audit close-out
+
+  - "Re-tagged M of N Mondai 1 questions whose `correctIndex` resolved to a
+    particle in the canonical map" — not "re-tagged all Mondai 1 questions".
+  - "Stripped meta-fix history from N rationale fields against the K bad-
+    phrase substrings scanned" — not "stripped all meta-fix history".
+  - "Rewrote N rationale_hi fields where automated English-fragment detection
+    fired" — not "rewrote all unnatural rationale_hi". Some legitimate
+    technical fragments (e.g., "sub-が-suki", "X-jin") remain by design.
+
+### F.30.6 Anti-pattern: don't translate from broken Hindi
+
+When fixing PAPER-004-style mojibake, **always source from the verified
+`rationale_en` field, not from the existing broken `rationale_hi`**. Pitfall
+observed in this session: an initial fix pass tried to "clean up" the broken
+Hindi by re-translating it back into natural Hindi, but the broken Hindi was
+itself a wrong translation (talking about a different sentence than the
+question's actual stem). Result: clean-looking Hindi that was about the
+wrong sentence — worse than the original.
+
+Verify the new translation matches the question's actual stem + correct
+answer + rationale_en before saving.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
