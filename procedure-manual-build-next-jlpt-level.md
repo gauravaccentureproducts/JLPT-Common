@@ -8719,6 +8719,219 @@ wrong sentence — worse than the original.
 Verify the new translation matches the question's actual stem + correct
 answer + rationale_en before saving.
 
+## F.31 LLM / search-crawler accessibility — static surface design (added 2026-05-18)
+
+Documents the static-surface set that makes a hash-routed SPA visible
+to LLMs (Claude, ChatGPT, Perplexity, Google AI Overviews) and search
+crawlers (Googlebot). The N5 case surfaced the design in 2026-05-18
+via LLM-001..005 + REG-001 close-out (BUG-094..097, BUG-105, BUG-106);
+the same set generalizes to every Nx level that ships a hash-routed
+SPA on static hosting (GitHub Pages / Cloudflare Pages / Netlify).
+
+### F.31.1 The fragment-blindness class
+
+URL fragments (`#/learn/grammar/n5-008`) never travel in the HTTP
+request. The server sees only the path; it returns the SPA shell.
+LLM web-fetch tools and Googlebot get the same shell back for every
+hash-routed URL. The entire per-entity content is invisible to:
+
+  - LLM web-search workflows (Claude, GPT-4o web, Perplexity)
+  - Google site:foo.com indexing
+  - Bing, DuckDuckGo, all crawler-based discovery
+  - Social-media link unfurling (OG tags work, but link points at shell)
+
+### F.31.2 The 8-surface design (canonical set for any Nx SPA)
+
+The minimum complete set:
+
+| Surface | URL pattern | Purpose |
+|---|---|---|
+| 1. Per-entity static mirrors | `/Nx/learn/<module>/<id>/index.html` | One HTML page per grammar pattern / vocab entry / kanji / passage / drill / paper. Server-rendered; no JS required. |
+| 2. Per-module index landing | `/Nx/learn/<module>/index.html` | Per-module "all 178 grammar patterns" / "all 1000 vocab" listing pages. |
+| 3. Thin summary pages | `/Nx/<slug>.html` (7 files) | One-page-per-module summary (home / grammar / vocabulary / kanji / reading / listening / test). Crawler-friendly bookmark targets. |
+| 4. Site-level sitemap | `/Nx/sitemap.xml` | Every static URL listed (≥1000 for N5; scales linearly with corpus size). |
+| 5. Corpus discovery JSON | `/Nx/data/index.json` | Programmatic catalog of every data file with URL, size, mtime, content-type, schema-version, item-count, description. |
+| 6. LLM-discovery TXT | `/llms.txt` (root) + `/Nx/llms.txt` | Markdown-formatted plain-text describing the site for LLMs (per the llms.txt spec community draft). |
+| 7. robots.txt | `/Nx/robots.txt` + `/robots.txt` | Sitemap reference; allows crawling. |
+| 8. noscript fallback | `/Nx/index.html <noscript>` | Path-routed nav (NOT hash routes!) so non-JS clients land on a usable directory of static pages. |
+
+### F.31.3 Build-script architecture
+
+One Python script per Nx, modeled on N5's
+`tools/build_llm_surfaces_2026_05_18.py` (8 stages):
+
+```
+def main():
+    data = load_corpora()  # all *.json files + version.json
+    stage_papers_mirrors(data)     # Stage 1
+    stage_data_index(data)         # Stage 2 — must run AFTER any corpus mutation
+    stage_llms_txt(data)           # Stage 3
+    stage_summary_pages(data)      # Stage 4
+    stage_sitemap(data)            # Stage 5 — must run AFTER mirror generation
+    stage_noscript_update(data)    # Stage 6
+    stage_root_picker()            # Stage 7
+    stage_robots_root()            # Stage 8
+```
+
+Re-run the script after any data/* change. Stages 2 and 5 read from
+disk (stages 2 reads file sizes; stage 5 enumerates mirror dirs), so
+they depend on order. Always re-run the whole script — the per-stage
+cost is small (1-2 seconds total for N5's 1370+ mirrors).
+
+### F.31.4 CI invariants (paste these into Nx's content_integrity.py)
+
+  - **JA-Nx-1 (mirror coverage)** — every data/papers/*/*.json has a
+    corresponding /papers/<id>/index.html. Same shape for grammar /
+    vocab / kanji / reading / listening.
+  - **JA-Nx-2 (sitemap floor)** — sitemap.xml has ≥1000 `<loc>` entries
+    (regression floor; catches the "only 10 meta routes" pre-fix state).
+  - **JA-Nx-3 (data/index.json integrity)** — every entry's `size_bytes`
+    matches actual on-disk file size. Same drift class as INV-4 /
+    JA-107 (version.json counts vs live corpus); same fix pattern.
+  - **JA-Nx-4 (summary pages exist)** — all 7 *.html files + llms.txt
+    (root + Nx) present.
+  - **JA-Nx-5 (no hash routes in noscript)** — every `<a href>` in the
+    server-rendered shell noscript starts with "/" or "https://" —
+    never "#". Crawlers reading the shell can follow the links;
+    hash routes are dead ends for non-JS clients.
+
+### F.31.5 Common pitfalls
+
+1. **CSP `frame-ancestors` via meta** — see F.29.3 (NR-UI-001).
+   IGNORED by browsers; same trap for any HTTP-header-only directive.
+2. **Hash routes in `<a href>` after path-route migration** — the
+   server-rendered shell may still have legacy hash links. Use
+   JA-Nx-5 to catch.
+3. **Sitemap stale after data growth** — the build script must run as
+   part of the release pipeline. If sitemap is checked in, it goes
+   stale; if regenerated only manually, the maintainer forgets after
+   N data adds. Wire the script into the deploy workflow.
+4. **data/index.json size drift** — same drift class as version.json
+   counts (INV-4 / JA-107). Every mutation to data/*.json must trigger
+   data/index.json regeneration in the same commit. JA-Nx-3 catches.
+5. **Per-paper-pack mirrors are NOT per-question** — for the JLPT
+   paper bank, one HTML page per PAPER PACK (15-20 questions), NOT one
+   per question. The interactive timed-test UX stays in the SPA.
+
+### F.31.6 Bounded-coverage phrasing
+
+  - "Static mirrors cover *every entity in data/* at build time*" —
+    not "static mirrors cover every entity" (entities added after the
+    last build aren't there until next regen).
+  - "sitemap.xml lists *the URLs present at build time*" — not "lists
+    every URL" (legacy URLs from prior builds are NOT removed
+    automatically; rebuild + git-clean to prune).
+  - "JA-Nx-3 prevents *size_bytes drift between data/index.json and
+    actual on-disk files*" — not "prevents corpus drift". A subtle
+    same-byte-size content change (e.g., a typo fix that preserves
+    total bytes) would pass.
+  - "llms.txt is the *current community-draft format*" — the spec
+    is evolving; treat the file as living, not frozen.
+
+## F.32 Register-variant vs grammar-error distinction (added 2026-05-18)
+
+Documents the REG-001 (BUG-106) finding: a register CHOICE between
+two grammatical alternatives (e.g., だれ vs どなた, けど vs けれど,
+わかってる vs わかります) must NOT be framed as WRONG/RIGHT in
+`wrong_corrected_pair`. Both forms are grammatical; the choice is
+register, not correctness. The right schema is `register_variant`
+nested in `common_mistakes` with `form_a` / `form_b` / `label_a` /
+`label_b` fields.
+
+### F.32.1 Six defect classes (D1..D6) per the REG-001 sweep
+
+D1 — **WRONG/RIGHT framing on a register choice.** Both forms are
+grammatical. Migrate to register_variant.
+
+D2 — **Conflated semantics in "alternatives" list.** E.g.,
+「やまださんは どなた ですか」 (asking identity) ≠
+「やまださんは どんな 人 ですか」 (asking character description).
+Don't present semantically-distinct forms as register equivalents.
+
+D3 — **Formality vs elevation conflation.** だれ vs どなた is
+referent-elevation (尊敬), not sentence-level formality. だれ is
+the neutral default and is fine in polite/formal contexts.
+
+D4 — **Out-of-Nx-scope item taught as canonical.** どなた is N4-N3
+vocabulary. At N5 the canonical question word is だれ; どなた is
+"shown for reference" with `scope_note` annotation.
+
+D5 — **Kana form of whitelist kanji.** ひと in kana when 人 is in
+the whitelist is JA-100 violation. Use kanji.
+
+D6 — **Self-contradicting annotation.** ✗ line marked Incorrect AND
+annotated with the register it's appropriate for ("(formal)",
+"(polite)", "(in casual conversation)", etc.). Internally
+contradictory — if it's appropriate to a register, it isn't wrong.
+
+### F.32.2 The register_variant schema
+
+```json
+{
+  "kind": "register_variant",
+  "form_a": "わかってる。",
+  "form_b": "わかります。",
+  "label_a": "casual / spoken — contraction of わかっている",
+  "label_b": "polite / formal — full polite form",
+  "why": "...explanation of why both are grammatical, what governs the choice...",
+  "category": "register",
+  "scope_note": "[optional — flag if out-of-Nx-scope]",
+  "provenance": "native_reviewed"
+}
+```
+
+Lives in `common_mistakes` (not `wrong_corrected_pair`).
+
+### F.32.3 CI invariant (paste into Nx content_integrity.py)
+
+**JA-Nx (REG-001 D6 guard)** — no entry in `wrong_corrected_pair`
+with `error_category == "register"` may have a wrong-field
+parenthetical that names the register the form is appropriate for.
+Trip phrases (the most common D6 markers):
+
+  - "(formal)" / "(in formal context)" / "(in formal speech)"
+  - "(polite)" / "(in polite contexts)"
+  - "(casual)" / "(in casual conversation)"
+  - "(among friends)" / "(with intimates)"
+  - "(acceptable in X)"
+
+Catches the most-egregious D6 violations. Subtler D1..D5 cases need
+per-entry native-speaker triage.
+
+### F.32.4 Sweep procedure (D1..D6 across the whole corpus)
+
+The REG-001 bug specifies a 6-step sweep:
+
+  1. **SWEEP-1** — All WRONG/RIGHT entries where `error_category`
+     is `register` or `why` field references politeness/formality.
+     Triage as A (migrate to register_variant), B (genuine error,
+     keep), or C (pragmatic-mismatch, re-categorize).
+  2. **SWEEP-2** — Semantically-distinct forms presented as
+     register-equivalents (D2 class).
+  3. **SWEEP-3** — Formality vs elevation conflations (D3 class).
+  4. **SWEEP-4** — Out-of-Nx-scope items taught as canonical (D4).
+  5. **SWEEP-5** — Kana-form of whitelist kanji (D5).
+  6. **SWEEP-6** — Self-contradicting annotations (D6).
+
+SWEEP-6 is the easiest to automate (CI invariant catches the marker
+phrases). SWEEP-1 surfaces candidates but requires native-speaker
+triage per entry. SWEEP-2..5 are deferred to native-speaker review
+sessions (file as REG-NNN follow-up bugs).
+
+### F.32.5 Bounded-coverage phrasing
+
+  - "JA-Nx D6 invariant prevents *the marker-phrase set listed in
+    F.32.3*" — not "prevents all D6 violations". A creatively
+    phrased self-contradiction without these markers slips past.
+  - "SWEEP-1 candidate report surfaces *entries with register
+    keywords in the why-field*" — not "all register-variant
+    candidates". A register-mismatch entry whose why-field uses
+    Japanese terminology (尊敬 etc.) instead of English markers
+    needs separate detection.
+  - "REG-001 close-out covers *the N5 entries matching the trip-
+    phrases*" — not "all register-conflations in N5". The deeper
+    sweep (SWEEP-2..5) is scoped as native-speaker review work.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
