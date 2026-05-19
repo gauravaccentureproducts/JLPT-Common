@@ -9264,6 +9264,104 @@ Re-run all 3 before committing any data or CSS/JS change. Same
   - "Selenium mobile-emulation footer-reachability is *not Selenium-testable in current Chrome*" — Manual / Appium fallback documented.
   - "MOB-010 (sticky header top=16px) declined as P5 design-decision" — borderline by-design; not fixed.
 
+## F.35 Rationale content-discipline — copy-paste mismatch + meta-content (added 2026-05-19)
+
+The GOI-001..003 (BUG-130..132) batch surfaced 2 durable rationale-
+content defect classes that complement F.30 (PAPER-001..004),
+F.33 (DOKKAI-001..003), and F.34.4 (Class D locale-parity). These
+apply to every paper-bank corpus across Nx levels.
+
+### F.35.1 Class A — Copy-paste content-mismatch between rationale_hi
+                    and stem (hard learner-facing breakage)
+
+**Symptom:** A question's `rationale_hi` (Hindi explanation) is
+byte-identical to a neighboring question's `rationale_hi` — copy-
+pasted during authoring and the rewrite for the specific question's
+topic was missed. The result is a Hindi-locale learner who answers
+the question correctly and then reads an explanation about a
+completely different topic.
+
+**N5 example:** `goi-6.11` (phone-call paraphrase: 「電話を かけて +
+一時間 話した」 = 「電話で 話した」) carried `rationale_hi` byte-
+identical to `goi-6.12`'s (about age: 「いま 二十さいです」/はたち).
+A Hindi-speaking learner sees age content on a phone-call question.
+
+**Detection (CI: JA-136):** for each paper file, group questions by
+their `rationale_hi` value; flag any value shared by 2+ questions
+within the same paper. Threshold 30 chars — excludes legitimately-
+short shared rationales (single-line "Hindi mirror of formula"
+patterns).
+
+**False-positive considered + rejected:** the bug spec proposed
+"rationale_hi must share at least 1 Japanese token with stem_html
+OR correctAnswer". Implementation showed ~100 false positives on
+the existing N5 corpus — mostly dictionary-form ↔ polite-form
+variation (`友だちと` in rationale_hi vs `ともだち` in stem;
+`すき` vs `すきです`). The literal-substring overlap check is too
+strict; semantic token equivalence requires per-language morphology
+rules. **JA-136 falls back to the narrower-but-defensible cross-
+question-equality check.** Token-overlap mismatch detection stays
+in manual-review territory.
+
+**Fix protocol:** for each flagged question, rewrite rationale_hi in
+natural Hindi grounded in the actual question's stem + correct
+answer. Update `rationale_hi_provenance` to
+`native_reviewed_<DATE>`.
+
+### F.35.2 Class B — Meta-content in learner-facing rationale
+
+Extension of F.30.2 (Class B PAPER-003 meta-fix history). Same
+underlying anti-pattern with new trigger phrases:
+
+**N5 examples from goi-6:**
+  - `goi-6.14` rationale ended with "Hence the rewording from a
+    prior version" — commit-trail content (F.30.2 class).
+  - `goi-6.12` rationale ended with "documented at vocabulary_n5.md
+    but does not bear on the time-reference test point this question
+    targets" — meta-documentation pointer + question-authoring
+    framing, NOT pedagogy.
+
+**Detection (CI: JA-121 extension):** added trigger substrings
+`"Hence the rewording"`, `"rewording from a prior"`, `"from a prior
+version"`, `"documented at vocabulary_n5.md"`, `"documented at"`,
+`"does not bear on"`, `"test point this question"`.
+
+**Fix protocol:**
+  - Drop the meta sentence entirely if it adds no learner value.
+  - OR rewrite as direct pedagogical content if the underlying
+    information is useful (e.g., the goi-6.12 はたち special-reading
+    note was rewritten as `"Note: 二十さい is read はたち, not
+    にじゅっさい — a special on-yomi exception shared with 二十日
+    (はつか)."`).
+
+### F.35.3 Bounded-coverage phrasing
+
+  - "JA-136 catches *byte-identical rationale_hi duplication within
+    a paper file*" — not "all content-mismatch". A copy-paste that
+    edited a few tokens to look different but still discussed the
+    wrong topic slips past.
+  - "JA-121 (extended) catches *the trigger phrase set*" — subtler
+    meta-content phrasings still need per-entry review.
+  - "Token-overlap check rejected for false-positive rate" — the
+    literal-substring approach is too strict; a future invariant
+    using morphological-stemming (kuromoji or similar) could
+    revive the bug-spec's original recommendation with acceptable
+    precision.
+
+### F.35.4 Same drift-class lineage
+
+JA-136 + JA-121-extension complete a 5-invariant family on paper-
+question rationale fields:
+  - JA-121 — no meta-fix history (PAPER-003 + GOI-002/003 extended)
+  - JA-122 — no English-pattern fragments in Hindi (PAPER-004)
+  - JA-129 — no untranslated temporal markers (DOKKAI-002/004)
+  - JA-136 — no cross-question rationale_hi duplication (GOI-001)
+
+Combined coverage: meta-content + foreign-fragment + copy-paste
+defect classes. Subtler defects (wrong-but-coherent rationale,
+misleading framing without trigger phrases) remain in manual-
+review territory.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
