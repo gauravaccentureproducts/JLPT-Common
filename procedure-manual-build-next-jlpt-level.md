@@ -9511,6 +9511,194 @@ closes via the appropriate output type. Avoids the
 anti-pattern of letting deferred items pile up indefinitely
 in `AUDIT-COVERAGE` "pending future work" sections.
 
+## F.37 Mixed-script mojibake + off-by-one rationale_hi shift + fix-history strip (added 2026-05-21)
+
+Three distinct content-drift classes surfaced in the same
+sweep on `data/papers/goi/*.json` (GOI-004 / GOI-005 / GOI-006,
+BUG-133 / 134 / 135). Each had a sibling instance elsewhere in
+the corpus that the original single-fix sweep missed —
+generalizing the lesson is what protects Nx.
+
+### F.37.1 Class A — Mixed-script mojibake inside a JP-character word
+
+**Anti-pattern.** A search-and-replace or transliteration
+pass substitutes a kana character with the closest Devanagari
+glyph, producing a token like 「あमारी ありません」 or
+「一時間ぐらि」 — kana あ / ぐら + Devanagari ma + Devanagari ī
+in a single word. The token reads as invalid Japanese
+(mixed-script word) AND invalid Hindi (the Devanagari letters
+don't form a recognizable Hindi word), and it garbles the
+pedagogical point the rationale is trying to make.
+
+**Detection.** Scan every rationale_hi (and any other field
+that mixes languages) for the regex
+`[ぁ-ゖァ-ヺ一-鿿][ऀ-ॣ०-ॿ]` — a Devanagari letter
+immediately following a kana/CJK character with no separator.
+**Exclusions:** Devanagari danda `।` (U+0964) and double-danda
+`॥` (U+0965) are sentence-end punctuation; they appear
+legitimately after a JP-character word. Hyphenated cross-script
+terms like 「い-विशेषण」 are also legitimate (the hyphen is the
+boundary). The clean ripgrep equivalent:
+
+```
+rg -nP '[ぁ-ゖァ-ヺ一-鿿][\x{0900}-\x{0963}\x{0966}-\x{097F}]' data/
+```
+
+**Fix.** Surface every hit. For each, restore the original JP
+token (`あमारी` → `あまり` or `あまく`; `ぐらि` → `ぐらい`),
+then rewrite the surrounding Hindi naturally so the rationale
+reads cleanly. Stamp `rationale_hi_provenance: native_reviewed_YYYY_MM_DD`.
+
+**CI invariant (JA-139 on N5).** Detector identical to the
+ripgrep above, evaluated per-token across all rationale_hi
+strings. The invariant is **honest** — it doesn't claim to
+catch all mojibake, only the mixed-script class. Other
+mojibake classes (full-line garbled text, encoding-double-pass
+artifacts) need separate detectors.
+
+**Horizontal-deployment proof point.** On N5, the original
+GOI-006 bug listed exactly one hit (goi-7.4). The sharpened
+JA-139 detector — applied to the entire `data/papers/` tree —
+surfaced 2 more hits in `dokkai-2.11` and `dokkai-3.4` that
+the original sweep missed. All 3 fixed in one batch. The
+lesson: every per-bug fix must run a corpus-wide detector
+**before** declaring the class closed; one-shot fixes leak.
+
+### F.37.2 Class B — Off-by-one rationale_hi shift across consecutive questions
+
+**Anti-pattern.** Two consecutive questions in a paper get
+their `rationale_hi` cell content shifted by one: question N
+carries question (N+1)'s rationale_hi, and (N+1) carries
+(N+2)'s. The English `rationale` is correct; only the Hindi
+side shifted. Looks plausible to a non-Japanese reader
+because every Hindi cell is well-formed prose — but the
+content describes a different question's grammar.
+
+**Why the original sweep didn't catch it.** Token-overlap
+detectors that compare `rationale_hi` ↔ `stem_html` produce
+a 21% false-positive rate from polite-form ↔ dictionary-form
+variation; running them as a strict CI gate is too noisy.
+GOI-001's original fix (single-pair shift on goi-6.11) didn't
+extend the corpus-wide sweep, so the same off-by-one pattern
+in goi-7.6 ↔ goi-7.7 went undetected for one audit cycle.
+
+**Sharpened detector (JA-137 on N5).** Instead of a strict
+own-question overlap check, look for the **narrow signal of
+an off-by-one shift**: a question's rationale_hi has **0**
+content-token overlap with its OWN stem AND **≥2** overlap
+with the NEXT question's stem. False-positive rate <1%; the
+signal is the asymmetric overlap, not the absolute overlap.
+
+**Fix.** For each detected shift pair, rewrite both Hindi
+strings from scratch about their actual stems' content
+(don't just shift them back — the (N+2) cell might have its
+own issue). Provenance: `native_reviewed_YYYY_MM_DD`.
+
+### F.37.3 Class C — Fix-history / version-references / replacement-history in rationale fields
+
+**Anti-pattern.** A previous fix added meta-commentary to a
+rationale, e.g., `"(replaces ので which leans N4)"`,
+`"Strict-N5: drops the previous keyed form..."`,
+`"per the same policy applied at Q97 in v1.12.13"`,
+`"replaces the previous シャツ"`. The rationale becomes a
+commit message instead of pedagogy. Learners read the fix
+history; the actual N5 paraphrase point gets buried or lost.
+Hindi mirrors carry the same bilingual drift.
+
+**Detection.** Phrase-list scan over `rationale` +
+`rationale_hi` for: `"replaces the prior"`,
+`"replaces the previous"`, `"previous version"`,
+`"prior version"`, `"Strict-N5:"`, `"in v1."`,
+`"policy applied at"`, `"no longer appears"`, and the Hindi
+equivalents `"पिछले संस्करण"`, `"पुराने"`, `"की जगह लेता"`.
+
+**Fix.** Strip the fix-history sentence. Keep only the actual
+paraphrase pedagogy (usually the first sentence of the
+rationale, which states the N5 vocab triangle or grammatical
+equivalence the question is testing).
+
+**CI invariant (JA-121 extension on N5).** The existing
+JA-121 detector (commit-message-style meta-fix history) grew
+to cover the additional trigger phrases above. **No new
+JA-NN number was minted** — JA-121's name and intent already
+matched this class, so the extension stays inside JA-121.
+Avoids invariant-number inflation when an existing detector
+generalizes cleanly.
+
+### F.37.4 Build script template (Nx-builder pattern)
+
+```python
+# tools/audit_mixed_script_mojibake.py
+import re, json, glob, sys
+DEVA = r"[ऀ-ॣ०-ॿ]"
+JP   = r"[ぁ-ゖァ-ヺ一-鿿]"
+HIT  = re.compile(f"{JP}{DEVA}")
+for fp in glob.glob("data/papers/*/paper-*.json"):
+    d = json.load(open(fp, encoding="utf-8"))
+    for q in d.get("questions", []):
+        for k in ("rationale_hi", "explanation_hi"):
+            v = q.get(k, "")
+            for m in HIT.finditer(v or ""):
+                print(f"{fp}\t{q.get('id')}\t{k}\t{m.group()}")
+```
+
+For Class B (off-by-one shift):
+
+```python
+# tools/audit_off_by_one_rationale_hi_shift.py
+import re, json, glob
+JP_TOK = re.compile(r"[ぁ-ゖァ-ヺ一-鿿]+")
+def tokens(s): return set(JP_TOK.findall(s or ""))
+for fp in glob.glob("data/papers/*/paper-*.json"):
+    qs = json.load(open(fp, encoding="utf-8")).get("questions", [])
+    for i, q in enumerate(qs):
+        own_stem = tokens(q.get("stem_html", "") + " " + q.get("correctAnswer", ""))
+        if not own_stem: continue
+        rh_toks = tokens(q.get("rationale_hi", ""))
+        own_overlap = len(rh_toks & own_stem)
+        if own_overlap > 0: continue
+        if i + 1 >= len(qs): continue
+        next_stem = tokens(qs[i+1].get("stem_html", "") + " " + qs[i+1].get("correctAnswer", ""))
+        next_overlap = len(rh_toks & next_stem)
+        if next_overlap >= 2:
+            print(f"{fp}\t{q['id']}\town={own_overlap}\tnext={next_overlap}")
+```
+
+### F.37.5 Bounded-coverage phrasing
+
+When closing this batch in an audit-coverage doc, use:
+
+- "JA-139 prevents re-introduction of *mixed-script
+  Devanagari-inside-kana mojibake in `rationale_hi`*"
+  — NOT "JA-139 prevents all mojibake"
+- "JA-137 catches the *narrow off-by-one shift signal
+  (0 own + ≥2 next overlap)* — broader token-overlap
+  divergence stays advisory in
+  `tools/audit_rationale_overlap_YYYY_MM_DD.py`"
+- "JA-121 trigger set extended with these 11 specific
+  phrases; the underlying anti-pattern (fix-history in
+  learner-facing rationale) is enforced *against this
+  trigger set*, not against all possible meta-commentary
+  phrasings"
+- "Horizontal-deployment sweep on `data/papers/*` surfaced
+  N additional same-class instances beyond the originally
+  filed bug; all fixed in this batch"
+
+### F.37.6 Same drift-class lineage (predicting Nx)
+
+| Class | First seen | Next sighting | Lesson |
+|-------|-----------|--------------|--------|
+| Mixed-script mojibake | GOI-006 (goi-7.4, 2026-05-21) | DOKKAI horizontal sweep (dokkai-2.11, dokkai-3.4) same day | Always run corpus-wide before claim of closure |
+| Off-by-one rationale_hi shift | GOI-001 (goi-6.11, 2026-05-19) | GOI-004 (goi-7.6 + goi-7.7, 2026-05-21) | First fix is the sample, not the close |
+| Fix-history in rationale | GOI-002 (goi-6.14, 2026-05-19) → PAPER-003 | GOI-005 (7 fields across 5 papers, 2026-05-21) | Phrase-list detectors miss synonyms; extend trigger set each time a new phrasing surfaces |
+
+**Operational rule for Nx:** any time a fix lands for one
+of these three classes, schedule the corpus-wide sweep AS
+PART OF THE SAME COMMIT. Don't let "horizontal deployment"
+become a follow-up commit — it becomes a deferred item that
+the user has to remember to nag about, and accumulates into
+the batch-closure pattern of F.36.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
@@ -9652,5 +9840,14 @@ audio + i18n + console-error-zero verification; critical
 NR-UI-001 lesson that some defense-in-depth security headers
 (frame-ancestors, X-Frame-Options) are HTTP-header-only and
 IGNORED via <meta> — always verify runtime effectiveness, not
-just source presence).*
+just source presence).
+Extended 2026-05-21 with F.37 (mixed-script mojibake + off-by-one
+rationale_hi shift + fix-history strip — BUG-133/134/135 closure).
+Three drift classes surfaced in the same goi sweep, each with a
+sibling instance the original single-fix pass missed; horizontal-
+deployment-as-part-of-same-commit operational rule generalizes
+the lesson; JA-137 (narrow off-by-one detector) + JA-139
+(mixed-script mojibake detector) added to CI; JA-121 trigger set
+extended in place (no new JA-NN number — preferred when an
+existing detector's intent already matches the new class).*
 
