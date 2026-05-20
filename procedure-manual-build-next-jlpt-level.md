@@ -9362,6 +9362,155 @@ defect classes. Subtler defects (wrong-but-coherent rationale,
 misleading framing without trigger phrases) remain in manual-
 review territory.
 
+## F.36 Closing deferred items: 3 actionable + 1 genuinely-human-only (added 2026-05-21)
+
+Documents the methodology for closing a batch of deferred items
+where some are actionable (codify policy, ship advisory tool,
+add CI workflow) and one is genuinely human-only (actual native-
+speaker review). Pattern applies to any Nx after a long
+LLM-curated audit session has accumulated deferred items.
+
+### F.36.1 Class A — Codify implicit conventions into explicit policy docs
+
+**When applies:** an audit flagged what it called a "violation"
+but corpus-convention check shows the "violation" is actually
+established practice.
+
+**Example (N5 SWEEP-5):** REG-001 D5 claimed kana-form of
+whitelist kanji (わたし / ともだち / じょうず) in honorific
+examples was a defect. Convention check across grammar.json
+examples showed kana-first is the established pattern for these
+specific words (varies per-word; some words ARE kanji-first like
+人 25× vs ひと 6×).
+
+**Fix shape:** write a policy doc that:
+
+  1. Documents the convention with measured counts
+  2. Lists per-word preferences (not a global rule)
+  3. Cites pedagogical rationale (Genki I / Minna I beginner-stage
+     conventions; recognition-target vs production-target)
+  4. Marks the audit finding as "closed-as-policy" rather than
+     "declined-with-reason"
+
+**Output:** `docs/ORTHOGRAPHY-POLICY-Nx.md` (or similar).
+Pattern-template at `N5/docs/ORTHOGRAPHY-POLICY-N5.md`.
+
+### F.36.2 Class B — Ship advisory audit tools where strict CI invariants would be too noisy
+
+**When applies:** a bug spec proposes a strict invariant but
+implementation produces too many false positives for CI use
+(typically 5-20% false-positive rate from morphological /
+semantic limitations of substring matching).
+
+**Example (N5 GOI-001 follow-up JA-137 candidate):** bug spec
+proposed "rationale_hi must share ≥1 Japanese token with
+stem_html / correctAnswer". Lightweight stemmer (strip particles +
+ます/ました/ません endings + です/だ + kana↔kanji normalization)
+still produces ~21% false-positive rate on existing corpus,
+primarily due to dictionary-form ↔ polite-form ↔ orthography
+variation that requires kuromoji-class morphological analysis.
+
+**Fix shape:** instead of strict CI invariant, ship as standalone
+audit tool:
+
+  1. Implement the stemmer + check as a CLI tool
+     (`tools/audit_<class>_<date>.py`)
+  2. Output advisory candidates (DON'T fail exit code on
+     candidates; reserve non-zero exit for tool-internal errors)
+  3. Document false-positive rate in the tool's docstring
+  4. Note: "shipped as advisory; not CI-enforced due to
+     morphology limitations. Each candidate needs human-reviewer
+     judgment."
+
+**Output:** `tools/audit_<class>_<date>.py`. Pattern-template at
+`N5/tools/audit_rationale_overlap_2026_05_21.py`.
+
+**Anti-pattern:** don't ship the strict check as CI if it would
+block legitimate commits. False-positive noise erodes trust in
+all CI invariants.
+
+### F.36.3 Class C — Wire build-script integration into CI workflows
+
+**When applies:** a tool exists but is run manually; the
+maintainer can forget to run it after a data edit.
+
+**Example (N5 LLM-005 build-script integration):**
+`tools/build_llm_surfaces_2026_05_18.py` regenerates 1370+ static
+mirrors + sitemap + data/index.json + llms.txt + 7 summary
+pages. Without CI integration, maintainer forgetting to run it
+after a data edit produces stale mirrors caught only by JA-125
+(byte-size drift) post-fact.
+
+**Fix shape:** create `.github/workflows/regen-<surface>.yml`
+that:
+
+  1. Triggers on push touching the relevant source paths
+     (e.g., `paths: ['Nx/data/**', 'Nx/tools/build_*.py']`)
+  2. Re-runs the regeneration script
+  3. Asserts `git diff --quiet` post-run (no drift)
+  4. Fails with clear error message + diff summary if drift
+
+This catches drift PRE-merge instead of POST-merge, with a
+clearer error message than the existing byte-size invariant.
+
+**Output:** `.github/workflows/regen-<surface>.yml`.
+Pattern-template at
+`N5/.github/workflows/regen-llm-surfaces.yml`.
+
+### F.36.4 Class D — Surface genuine-human-only items as path-forward docs
+
+**When applies:** an LLM-curated audit reaches its limits
+and the remaining work requires actual native-speaker /
+domain-expert / paid-reviewer input.
+
+**Example (N5 native-speaker re-verification of register_variant
+entries):** 54 entries in grammar.json carry
+`llm_curated_with_reference_*` provenance after Tier 1/2/3
+audits. Genuine native-speaker review is required to upgrade to
+`native_reviewed_*` provenance. An LLM cannot become a native
+speaker by working harder.
+
+**Fix shape:** write a path-forward doc that:
+
+  1. Lists what needs human review (with counts)
+  2. Acknowledges WHY this is human-only (specific limits of
+     LLM judgment in the domain)
+  3. Documents 2-3 options (community PR, commissioned review,
+     status-quo with promote-on-finding)
+  4. Picks a default
+  5. Surfaces tracking signal — current state + expected post-review
+     state ranges (best-case / realistic / worst-case)
+
+**Output:** `docs/NATIVE-SPEAKER-RE-VERIFICATION.md` (or
+`-HUMAN-EXPERT-REVIEW.md` for non-language domains).
+Pattern-template at `N5/docs/NATIVE-SPEAKER-RE-VERIFICATION.md`.
+
+**Anti-pattern:** don't pretend the LLM-curated work is "done"
+just because the audits ran clean. Explicit provenance +
+explicit path-forward = trust-preserving honest framing.
+
+### F.36.5 Bounded-coverage phrasing
+
+  - "Codify-policy class A closes *the specific finding that
+    conflicted with established convention*" — not "all
+    convention conflicts".
+  - "Advisory-tool class B catches *candidates flagged by the
+    substring-stemmer*" — not "all content-mismatches".
+  - "CI-workflow class C catches *drift in the regenerated
+    surfaces*" — not "all build-integration regressions".
+  - "Path-forward class D documents *the LLM-curated entry set
+    at this checkpoint*" — future audits may surface additional
+    entries needing review.
+
+### F.36.6 When to use this batch-closure pattern
+
+Use at the end of a multi-day / multi-week audit session
+where deferred items have accumulated. The pattern surfaces
+each deferred item against one of 4 classes (A/B/C/D) and
+closes via the appropriate output type. Avoids the
+anti-pattern of letting deferred items pile up indefinitely
+in `AUDIT-COVERAGE` "pending future work" sections.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
