@@ -9699,6 +9699,196 @@ become a follow-up commit — it becomes a deferred item that
 the user has to remember to nag about, and accumulates into
 the batch-closure pattern of F.36.
 
+## F.38 Moji-paper content discipline — 4 durable classes (added 2026-05-21)
+
+The N5 moji-paper review (MOJI-001..007, 2026-05-21) produced four
+new content-discipline classes that generalize cleanly to Nx
+moji-equivalent subsections. Each got its own JA-NN invariant
+(JA-140..143). The lessons extend the rationale-content family
+documented in F.36 (PAPER-001..004) + F.37 (GOI-004..006).
+
+### F.38.1 Class A — Per-mondai stem-emphasis convention split (Nx-relevant)
+
+**Pattern.** A corpus uses two emphasis conventions (HTML
+`<u>X</u>` and markdown `__X__`) split by sub-section
+(typically Mondai 1 → HTML, Mondai 2 → markdown). Field name
+implies one convention (e.g., `stem_html`); actual usage mixes
+both within the same file at sub-section boundaries.
+
+**Risk.** A renderer that only handles one rule-set silently
+fails on half the corpus. An HTML-only renderer displays
+`__X__` literally as underscores around text. A markdown-only
+renderer leaves `<u>X</u>` as raw tags. Either way the
+emphasis fails on whichever half doesn't match the renderer.
+
+**N5 instance.** moji Mondai 1 (50 questions) used HTML; moji
+Mondai 2 (50 questions) used markdown; paper-4 mixed both at
+the Mondai 1→2 boundary within one file. The bug was filed
+as MOJI-001.
+
+**Nx pattern.** Any orthography-style sub-section where two
+different emphasis-marking concepts (e.g., "underline the
+kanji" vs "mark the kana") are author-conceptualized
+differently. Authors of Mondai 2 may have intuited "mark
+the kana" as needing a different visual treatment than
+Mondai 1's "underline the kanji" — both legitimate UX intents
+but ending up with two markup conventions in one corpus.
+
+**Fix pattern.** Pick ONE convention based on the rendering
+target. If `stem_html` is the field name and a web UI is the
+render target, HTML `<u>X</u>` is the right choice. Convert
+the other half in one atomic pass.
+
+**Invariant pattern.** Substring scan: any moji-category
+question with `__X__` in `stem_html` trips JA-140. Adapt for
+Nx by changing the field-name + category match.
+
+### F.38.2 Class B — auto_inferred grammarPatternId on orthography questions
+
+**Pattern.** Auto-inference of `grammarPatternId` from stem-
+content picks up surface-token similarity without semantic
+understanding. Works on grammar tests (bunpou) where the
+inferred pattern often matches the tested concept. **Fails
+silently on orthography tests** (moji, where the question
+tests kanji-reading / kana-to-kanji conversion). Particle
+tokens (も, は, に) inside the stem trigger n5-013/n5-117/
+n5-067 etc. inferences — but these tokens are NOT what the
+question tests.
+
+**Risk.** Spurious `grammarPatternId` values undermine
+downstream consumers (drill suggesters, weak-area diagnostics,
+cross-corpus pattern-difficulty reports). A learner who
+struggles on moji-5.2 (testing 子ども kanji recognition) gets
+counted as "weak on n5-013 も particle" — false signal.
+
+**N5 instance.** 28 of 100 moji questions had spurious
+auto-inferred IDs. Same anti-pattern class as the n5-013
+over-misuse fixed at PAPER-001 in the bunpou paper sweep.
+Filed as MOJI-002.
+
+**Lineage with PAPER-001.** PAPER-001 was the first sighting
+of auto-inferred grammarPatternId on a question type where
+the inference was semantically wrong (bunpou where the
+correctIndex-particle determines the right pattern, but
+auto-inference matched on a surface particle elsewhere in
+the stem). MOJI-002 is the corresponding sighting on
+orthography questions where NO grammarPatternId belongs.
+Pattern: **auto-inference works for grammar-tests where the
+tested concept IS a grammar pattern; it fails on every other
+test type**. For Nx, set the default to
+`null + not_applicable_<test_type>` for non-grammar question
+categories.
+
+**Invariant pattern.** Per-category check: a question in a
+non-grammar category with `grammarPatternId != null` AND
+`provenance == "auto_inferred"` trips the invariant. JA-141
+is the moji-category instance; JA-120 covers bunpou-particle
+class. For Nx, mint one invariant per non-grammar category
+(moji-equivalent, vocab-equivalent, listening, etc.).
+
+### F.38.3 Class C — Word-by-word HI rendering of EN verb constructions
+
+**Pattern.** Translation pass renders English verb
+constructions word-by-word into Hindi when no direct cognate
+exists. Same shape as F.36 Class D (PAPER-004 fragments)
+and the older DOKKAI-002 / DOKKAI-004 instances:
+- `'X has reading Y'` → `'X के पास है पढ़ते हुए Y'`
+- `'one month ago'` → `'एक महीना ago'` (untranslated "ago")
+- `'commute by train'` → `'आना-जाना by ट्रेन'` (untranslated "by")
+
+Each English idiom whose Hindi version is a different syntactic
+shape is at risk; every new instance needs both a fix (rewrite
+to natural Hindi) AND a substring trigger added to the
+corpus-wide JA-122-family scanner.
+
+**N5 instance.** moji-2.1 + moji-2.2 (2 consecutive questions
+with the same translation artifact). Filed as MOJI-005.
+
+**Invariant pattern.** Substring scan: corpus-wide rationale_hi
+for the trigger phrase trips the invariant. JA-142 is the
+`के पास है पढ़ते हुए` instance; same shape as JA-122 (PAPER-004),
+JA-129 (DOKKAI-002), JA-128 follow-ups. **Each fix adds one
+trigger to the family**; the family grows monotonically.
+
+### F.38.4 Class D — Cross-language content-coverage truncation
+
+**Pattern.** Translation pass produces a HI rationale that
+captures less content than the EN counterpart. Symptoms:
+- EN ends with a definitive conclusion sentence ("for N5
+  the 立 form is the only correct match")
+- HI ends one sentence earlier (acknowledges alternatives
+  exist but drops the "only correct match" verdict)
+
+This is **content-coverage parity**, not translation-quality.
+The HI reader is left ambiguous on the question's pedagogical
+takeaway while the EN reader gets the definitive answer.
+
+**Risk.** Hindi-medium learners receive systematically less
+pedagogical depth than English-medium learners. Trust-
+contract violation: if the docs claim "100% Hindi parity
+across all content surfaces," a 250c HI vs 343c EN rationale
+breaks the claim qualitatively even though the field is
+populated.
+
+**N5 instance.** moji-7.2 (250c HI / 343c EN, ratio 0.73 raw —
+borderline pass on the raw ratio, but the truncation was on
+the CONCLUSION sentence specifically). Filed as MOJI-006.
+Plus 4 more pre-existing instances discovered when JA-143
+first ran corpus-wide: goi-7.9 (0.59), moji-1.6 (0.60),
+moji-4.10 (0.43), moji-6.3 (0.34).
+
+**Fix pattern.** Extend the HI rationale to match the EN's
+conclusion. Don't truncate the EN to match HI brevity —
+the pedagogical content is what matters, not the field-
+length parity.
+
+**Invariant pattern.** Length-ratio scan: for any question
+where EN ≥ 80c AND HI ≥ 40c, the HI/EN ratio must be within
+[0.6, 2.0]. Accounts for HI's typical 1.3× expansion vs EN.
+Below 0.6 = HI truncated. Above 2.0 = EN truncated. JA-143
+is the instance.
+
+**Caveat.** This is a STRUCTURAL heuristic, not a pedagogical-
+coverage check. Within-band truncations (e.g., HI at 0.7×
+of EN but the dropped 30% was the most pedagogically critical
+sentence) still need manual review. The ratio bounds catch
+the most-egregious cases.
+
+### F.38.5 Same-class-discovery operational rule (extends F.37.6)
+
+When wiring a new invariant from a single-instance bug filing
+(like JA-143 from MOJI-006), **run the invariant corpus-wide
+in the same close-out commit and fix all discovered
+instances**. JA-143 first-run discovered 4 pre-existing same-
+class instances beyond the original MOJI-006 single-instance
+filing — fixing them in the MOJI batch saved a follow-up
+commit and gave the user a clean "0 Open" close-out.
+
+This generalizes the F.37.6 "horizontal-deployment sweep is
+part of the fix commit" lesson to **newly-wired invariants
+that detect a class the bug-report only described singly**.
+Always corpus-scan first; fix the entire surfaced set together.
+
+### F.38.6 Bounded-coverage phrasing for Nx audit docs
+
+When documenting MOJI-class fixes in `AUDIT-COVERAGE-*.md`:
+- "JA-140 catches *markdown `__X__` emphasis in moji
+  stems*" — other emphasis wrappers (italic, bold, color)
+  NOT covered.
+- "JA-141 catches *moji-category with auto_inferred
+  provenance*" — other categories may need their own minted
+  invariants.
+- "JA-142 catches *one specific Hindi translation-pattern
+  leak*" — each over-literal English→Hindi cognate gets its
+  own substring; full enumeration is open-ended.
+- "JA-143 catches *the 0.6×–2.0× ratio band*" — within-
+  band truncations still need manual review.
+
+Per the writing-discipline rule (F.36.5 + the WRITING
+DISCIPLINE FOR AUDIT DOCS section in
+`N5/prompts/Japanese language Accuracy check.txt`), state
+explicitly what the invariant catches and what it doesn't.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
