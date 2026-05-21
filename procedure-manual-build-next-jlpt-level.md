@@ -9889,6 +9889,283 @@ DISCIPLINE FOR AUDIT DOCS section in
 `N5/prompts/Japanese language Accuracy check.txt`), state
 explicitly what the invariant catches and what it doesn't.
 
+## F.39 Governance-doc + CI-hardening discipline — 8 durable classes (added 2026-05-21)
+
+The N5 governance-doc audit + orphaned-workflow migration produced
+eight durable classes that generalize to any Nx build. Documented
+together because the orphaned-workflow class (Class F) is what
+surfaced six of the others — a single architectural fix unblocked
+visibility into 6 separate pre-existing drift patterns.
+
+### F.39.1 Class A — Governance-doc stale-state class
+
+**Pattern.** Hand-maintained README / governance docs claim
+numerical state (counts, alignment ratios, deletion claims) that
+drift from reality as the corpus moves through batch cleanups.
+The docs were authored at a snapshot point (e.g., v1.12.8) but
+the corpus has since moved (v1.15.5) without doc updates.
+
+**N5 instances** (8 in one audit pass):
+- DOCS-VOCAB-001: 1041→995 entry-count drift (46-entry stale)
+- DOCS-VOCAB-002: lint-target enumeration incomplete
+- DOCS-VOCAB-003: "deleted directory" still referenced in 28
+  paper files
+- DOCS-VOCAB-004: 1041-969=72 surplus enumerated to only 17;
+  other 55 hand-waved
+- DOCS-KANJI-001: false "canonically 103 per JLPT.jp" citation
+- DOCS-KANJI-002: empty exception section with no template
+- DOCS-KANJI-003: indefinite bootstrapping mode with no exit
+  criteria
+- DOCS-KANJI-004: REVIEW_DATE format unspecified
+
+**Fix pattern.** Install a "Document status" header convention on
+every governance doc:
+
+```markdown
+---
+Document status:
+- Last verified against corpus: 2026-05-21
+- Corpus version at verification: v1.15.5
+- Maintenance: hand-updated; CI does not regenerate this README
+---
+```
+
+Stale drift becomes visible at a glance. Future readers + audit
+reviewers immediately see when the doc was last reconciled.
+
+**For Nx:** apply the same header convention to every governance
+doc from day one. When a hand-maintained README is created,
+include the Document status block. Audit each cycle.
+
+### F.39.2 Class B — Broken cross-file ref class (extension of JA-117 / JA-82)
+
+**Pattern.** README / spec claims a directory/file was deleted but
+other artifacts still reference it (or vice versa). Same shape as
+JA-117's `passage_id` + `pattern_id` cross-file resolution family.
+
+**N5 instance:** DOCS-VOCAB-003 — README said KnowledgeBank/
+deleted 2026-05-14 but 28 paper files still carried
+`source_file: KnowledgeBank/<cat>_questions_n5.md`.
+
+**Resolution options:**
+- (a) Restore the missing target.
+- (b) Update the broken refs to point elsewhere.
+- (c) Downgrade to honest tombstones (`"(authored in-place; was X
+  before Y date)"`) — N5 went with (c) since no consumer reads
+  `source_file`.
+
+**For Nx:** when deleting / merging governance content, grep for
+references first. Don't leave broken refs as silent drift.
+
+### F.39.3 Class C — False-authority citation class
+
+**Pattern.** Governance doc cites an "official source" that
+doesn't actually publish what's claimed. The cited number
+circulates in third-party materials but the original cited
+authority is silent / explicit-non-publication.
+
+**N5 instance:** DOCS-KANJI-001 — "canonically 103 kanji per
+JLPT.jp" but JLPT.jp's own FAQ says they don't publish kanji
+lists post-2010 reform. The 103 figure traces to pre-2010 旧4級
++ third-party reconstructions.
+
+**Fix pattern:** trace every "canonically per X" / "officially
+per Y" citation to its primary source. If primary source doesn't
+say what's cited, rewrite with honest provenance (consensus
+reconstruction / textbook intersection / etc.).
+
+**Hard to automate.** Treat as a per-audit manual check; flag any
+"canonically per", "officially per", "per JLPT.jp" citations for
+source-trace.
+
+### F.39.4 Class D — Underspecified-format class (CI: regex-validation pattern)
+
+**Pattern.** Governance doc says a field is "optional date for X"
+or "format: see tooling" without specifying the canonical
+representation. Downstream parsing fails inconsistently when
+contributors enter free-form values ("Q3 2026", "next release",
+"2026-08", "August 2026" all valid by the prose; none valid by
+the parser).
+
+**N5 instance:** DOCS-KANJI-004 — REVIEW_DATE field format
+unspecified. Fixed by specifying ISO 8601 + wiring JA-144 regex
+check.
+
+**Pattern wiring:** `^- FIELD: \d{4}-\d{2}-\d{2}$` style match
+against non-comment lines. Skip values inside HTML comment blocks
+(`<!-- ... -->`) so template/example entries don't trigger.
+
+**For Nx:** every optional / free-form field in a governance doc
+gets a documented canonical format + CI regex check. Default to
+ISO 8601 for dates, RFC 3987 for URIs, semver for version
+strings.
+
+### F.39.5 Class E — Indefinite-bootstrapping class
+
+**Pattern.** Governance doc references a "bootstrapping mode" or
+"pending state" without exit criteria. The invariant or feature
+stays inactive indefinitely because no one knows when it should
+activate.
+
+**N5 instance:** DOCS-KANJI-003 — JA-25 in bootstrapping mode
+pending `data/n5_official_kanji_scope.json`; no documented
+target/owner/contents → stays inactive forever.
+
+**Fix pattern:** every "bootstrapping" / "pending" state in a
+governance doc must have an exit criteria block:
+
+```markdown
+## Bootstrapping exit criteria
+
+The X invariant leaves bootstrapping mode when ALL of:
+
+1. [What must be true to exit — concrete + measurable]
+2. [Target version / date]
+3. [Owner — named person]
+
+Estimated effort: ~N hours.
+```
+
+**For Nx:** never leave a "pending" state without exit criteria.
+The criteria don't have to be exact — even a rough target
+("v1.16.0 or next major content review") is better than nothing.
+
+### F.39.6 Class F — Orphaned-CI class (CI: workflow location verification)
+
+**Pattern.** CI workflow files authored at the wrong directory
+location are silently never executed. GitHub Actions only reads
+`.github/workflows/` at REPO ROOT. Files at
+`subproject/.github/workflows/` are silently inactive.
+
+**N5 instance:** 5 workflow files (browserstack / content-integrity /
+lighthouse / playwright / regen-llm-surfaces) at
+`N5/.github/workflows/` had been defined-but-never-executed since
+authoring. Verified via `gh api repos/.../actions/workflows`:
+only Dependabot Updates + pages-build-deployment were registered
+pre-fix.
+
+**Symptoms (what indicates the orphan class):**
+- `gh workflow list` shows fewer workflows than the local
+  `.github/workflows` count.
+- `gh api repos/.../actions/workflows` shows only the
+  GitHub-managed defaults (Dependabot + Pages).
+- Workflows-defined-locally never appear in recent run history.
+- Recently-introduced check failures (CSS drift, data integrity,
+  etc.) never surface — because the workflow that would catch them
+  isn't actually running.
+
+**Fix pattern:**
+```bash
+git mv subproject/.github/workflows/* .github/workflows/
+```
++ add `defaults: run: working-directory: subproject` per job to
+preserve the working-directory semantics +
+update branch trigger to match the repo's default branch
+(`master` vs `main`).
+
+**Backlog expectation.** Once activated, expect the previously-
+hidden backlog to materialize. The N5 instance surfaced:
+- 37 CRLF-vs-LF size_bytes drift violations (Class H below)
+- last_modified mtime drift on every push (Class G below)
+- generated_at timestamp drift on every push (Class G)
+- 1 reference to a deleted KB-era script (Class A class)
+- 112 design-system violations across D-1..D-6 (pre-existing
+  backlog)
+
+These are normal "previously-inactive checks activate" outcomes,
+not regressions. Plan for backlog payment.
+
+**For Nx:** **verify CI registration as part of the build-out
+checklist.** From the start, after authoring any workflow:
+```bash
+gh workflow list
+gh api repos/<owner>/<repo>/actions/workflows --jq '.workflows[].name'
+```
+Confirm the workflow appears. If not, it's at the wrong path.
+
+### F.39.7 Class G — CI-metadata ephemeral-fields class
+
+**Pattern.** Build scripts that generate artifacts (manifests,
+index files) record per-regen timestamps. CI regenerates →
+records ITS timestamp → diff fails the "no drift" check even when
+content didn't change. Result: every push spuriously fails
+drift-guard workflows.
+
+**N5 instance:** `data/index.json` recorded:
+- per-entry `last_modified` (mtime from filesystem)
+- top-level `_meta.generated_at` (UTC now at regen)
+
+Both changed every regen → CI failed on every push regardless of
+content changes.
+
+**Fix pattern:** drop ephemeral fields from generated artifacts.
+Build-tag belongs in version.json (single source of truth); not
+in every derived artifact. Generator identity can stay
+(`_meta.generator`) since the script path is stable.
+
+**Detector:** a CI "regen produces no diff" check is itself the
+detector. Any field that fails this check on every push is an
+ephemeral-field candidate for removal.
+
+**For Nx:** when authoring a build script that emits a JSON
+artifact, ask: "would this field's value change on a no-op
+regen?" If yes, exclude it or compute from git-stable inputs
+(e.g., `version.json:version` instead of `datetime.now()`).
+
+### F.39.8 Class H — Cross-platform line-ending class (CI: LF-normalize at compute time)
+
+**Pattern.** Build scripts on Windows compute byte sizes via
+`os.path.getsize()` which returns CRLF-bloated counts. CI on
+Linux compares against LF-only file sizes. Mismatch ~1-3% per
+file across the corpus.
+
+**N5 instance:** `data/index.json.size_bytes` recorded CRLF
+sizes on Windows-authored regens. Linux CI saw LF sizes. 37
+violations on first real CI run.
+
+**Fix pattern:** LF-normalize when computing canonical sizes:
+```python
+def _lf_normalized_size(path: str) -> int:
+    with open(path, "rb") as f:
+        return len(f.read().replace(b"\r\n", b"\n"))
+```
+Apply BOTH at the build script (recording the size) AND at the
+CI check (computing the actual size). Both ends must agree on
+canonical (LF) representation.
+
+**Affected fields:** any size-tracking metadata. Could also affect
+hash-based fields (SHA-256 of file content) if not LF-normalized.
+
+**For Nx:** if the build runs cross-platform (Windows-authored
+artifacts read by Linux CI or vice versa), enforce LF
+normalization at every byte-counting / hashing site. Use a shared
+helper function.
+
+### F.39.9 Same-discovery-cascade operational rule (extends F.37.6 + F.38.5)
+
+When activating a previously-orphaned CI check (Class F above),
+**expect the same-class discovery cascade**: the check will
+surface a backlog of pre-existing instances that were hidden by
+the inactivity.
+
+**Strategy:**
+1. Activate the check (move workflow to correct path).
+2. Run once + count the backlog.
+3. If backlog is small (< 20 instances): fix in the same
+   activation commit.
+4. If backlog is large (> 20 instances, e.g., the 112 design-
+   system violations): mark the step `continue-on-error: true`
+   in the workflow + log the backlog as a separate close-out
+   task. Don't block the activation commit.
+5. Pay down the backlog in a focused cycle.
+6. Once paid down, remove the `continue-on-error: true` flag.
+
+Generalizes F.37.6's "horizontal-deployment sweep is part of the
+fix commit" + F.38.5's "newly-wired invariant runs corpus-wide
+in the same close-out commit" — to the case where the inactivity
+window was years long and the backlog is too large to absorb in
+one commit.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
