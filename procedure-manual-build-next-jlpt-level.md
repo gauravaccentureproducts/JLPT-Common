@@ -10166,6 +10166,289 @@ in the same close-out commit" — to the case where the inactivity
 window was years long and the backlog is too large to absorb in
 one commit.
 
+## F.40 CI-recovery triage — 6 durable classes from "what does a green-then-honest CI suite actually surface?" (added 2026-05-21)
+
+The N5 CI-recovery triage produced six durable classes that
+generalize to any Nx build. Documented together because they all
+emerged from a single discovery cascade: fixing a CI timeout
+(`workers: 1` → `workers: 2` + `video: off` on a 2-core ubuntu-
+latest runner) let the Playwright smoke suite complete for the
+first time since 2026-05-03, surfacing 65 pre-existing failures
+the cancellation had been masking.
+
+**Headline pattern.** When CI is consistently red but for an
+*infrastructure* reason (timeout / OOM / disk-full / network
+flake), every dependent failure mode is invisible until the
+infrastructure issue is resolved. The first green-ish run after
+the infra fix is the discovery moment, not the win moment.
+Budget triage time accordingly: the actual product fix may be 1
+commit but the discovery cascade can be 5-10.
+
+### F.40.1 Class A — CI-timeout-masking-failures class
+
+**Pattern.** A long-running CI suite hits the workflow timeout
+cap (e.g., 15 min) and gets cancelled mid-run. The cancellation
+prevents the test reporter from printing failure summaries, so
+the CI badge says "cancelled" instead of showing the actual
+failure breakdown. Repeated cancellations look like an
+infrastructure problem (slow runner, flaky job) when they're
+actually concealing 50+ assertion failures.
+
+**N5 instance.** Playwright suite cancelled at 8m22s / 12m21s /
+15m17s on three successive runs. Each bump-the-timeout cycle
+produced more "cancelled" badges. The actual cost wasn't in
+setup (cache-restored browsers took 25s) — it was a `workers: 1`
+config that serialised 120 test instances. Parallelising to
+`workers: 2` collapsed the run to 9m20s and immediately
+surfaced 65 unique failures.
+
+**Fix pattern.** When CI is consistently "cancelled" rather than
+"failed":
+1. Read the actual log via `gh run view <id> --log`. Note where
+   the cancellation hit (which step, what was running).
+2. Get the per-step timing breakdown via `gh run view <id> --json
+   jobs`. Compare per-step elapsed times.
+3. If the offending step is parallelisable (most test runners),
+   try parallelisation BEFORE bumping the timeout. The timeout
+   bump is a symptom-fix; parallelisation is a cause-fix.
+4. After the suite completes (even if failure), accept the
+   discovery cost: budget another N hours/days for triaging the
+   exposed failures.
+
+**For Nx:** every CI workflow should declare a `timeout-minutes`
+that's at least 2× the expected runtime — but the EXPECTED
+runtime must be measured, not guessed. When the suite hits the
+cap, the diagnosis sequence above applies.
+
+### F.40.2 Class B — Stale test assertions when UI evolves class
+
+**Pattern.** When the UI is restructured (elements removed,
+text changed, layout collapsed), tests against those affordances
+become stale but typically don't fail loudly until the test
+suite runs end-to-end. In the N5 cycle, ~10 tests asserted on
+`.syllabus-title`, `.syllabus-trust-band`, `.locale-chip`,
+"Start sitting" copy, `data-grammar-filter-group="tier"`, etc.
+— elements / strings deliberately removed weeks earlier.
+
+**N5 instances.**
+- `.syllabus-title` + `.syllabus-subtitle` + `.syllabus-action-
+  prompt` + `.btn-action-primary` removed when home was restructured.
+- `.syllabus-trust-band` + `.trust-pill` removed in favor of in-
+  card niche-N2 messaging + footer trust strip.
+- 2-segment `.locale-chip` group → single `#locale-toggle`
+  icon-btn (locale UI redesign 2026-05-09).
+- Test-length picker: `button.length-btn` → `<select id="test-
+  length">`.
+- Grammar TOC tier chips: removed 2026-05-10 per user feedback
+  (file header comment in `js/learn-grammar.js` line 190).
+- "Start sitting" CTA copy → "Start full mock test →" (same
+  date 2026-05-10).
+- Hardcoded counts (177 grammar patterns; reading 30; listening
+  30) that drifted to 178 / 54 / 50.
+
+**Fix pattern.**
+- Replace hardcoded counts with `fetch('data/version.json')`
+  reads, OR with `data/<corpus>.json` length introspection at
+  test runtime. The assertion then tracks the data without
+  edits.
+- For removed elements: either `test.skip` with a comment +
+  git-history reference, OR rewrite the test to assert the
+  replacement affordance (e.g., locale-chip → locale-toggle).
+- For copy changes: prefer regex match (`/Start.*sitting|mock/`)
+  over exact string match when the user-visible label is
+  product-marketing-controlled rather than test-controlled.
+
+**For Nx:** when removing or restructuring a UI affordance,
+grep `tests/` for the class name + copy strings. Update or
+remove the affected tests as part of the *same commit* that
+ships the UI change. The horizontal-deployment-sweep rule
+(F.37.6 / F.38.5) extends to test artifacts, not just code +
+data + docs.
+
+### F.40.3 Class C — First-run onboarding bypass for tests class
+
+**Pattern.** When the app has a "first-run experience" gate
+(redirect on no-history / no-streak / no-results), every CI run
+hits it because Playwright's fresh-context browsers have empty
+localStorage. The test navigates to `/`, the app redirects to
+`#/diagnostic`, the test asserts against the home DOM that
+isn't rendered.
+
+**N5 instance.** IMP-044 (2026-05-11) added first-run onboarding:
+hash-less visits with no history/results/streak redirect to
+`#/diagnostic`. Every test loading `/` failed: page title shows
+"JLPT N5 placement diagnostic" not the home title, the
+`.syllabus-card` count is 0, etc. Affected ~12 tests across
+3 spec files.
+
+**Fix pattern.** Add a global `test.beforeEach` (or
+`page.addInitScript`) that sets the "seen" sentinel before the
+first navigation:
+
+```js
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try { localStorage.setItem('app:onboardingSeen', '1'); } catch {}
+  });
+});
+```
+
+The sentinel must match the app's actual storage key (read
+the app's first-run code to find it). Apply to every
+`test.describe` block whose tests navigate to `/` (or any
+hash-less route the app intercepts).
+
+**For Nx:** any first-run flow MUST document its bypass
+sentinel in the test fixtures README so future test authors
+don't trip the same wall.
+
+### F.40.4 Class D — Rule-order bugs in priority chains class
+
+**Pattern.** When a recommender / decision engine has rules in a
+priority chain and one rule has a too-permissive catch-all
+condition, it dominates lower-priority specific rules that
+should fire later in the chain.
+
+**N5 instance.** The pedagogy recommender's R-13 ("catch-all
+returning user gets Open Learn") had condition `if (signal.
+isReturning)` — too broad. It dispatched BEFORE R-14 ("mock-
+paper ready", grammar≥60% AND kanji≥50%) in the RULES array, so
+R-14 NEVER fired for any returning user despite a sound product
+intent. The bug was invisible because R-14 was only exercised
+by a test that had never completed on CI.
+
+**Fix pattern.**
+- Audit every rule chain for catch-all conditions. Document
+  explicitly which rule is "the catch-all" — there should only
+  be ONE per chain.
+- Place catch-alls at the END of the dispatch array, not
+  according to rule-numbering.
+- Add positive tests for EVERY priority rule, with explicit
+  signal overrides that block higher-priority rules (e.g., null
+  out `lastLearnId` to prevent R-06 dominance).
+- Pair each positive test with a tie-break test (signal where a
+  higher-priority rule should win).
+
+**For Nx:** any recommender / decision-engine / SRS-scheduler
+shipped should ship with the same positive-plus-tie-break
+test discipline. The discovery cost is much lower in unit
+tests than in CI-runtime failures masked by other issues.
+
+### F.40.5 Class E — Color-contrast on branded headers class
+
+**Pattern.** A design system ships a "muted text" color
+calibrated for white / default-surface backgrounds. When that
+muted color is used inside a branded header band (non-white,
+non-surface bg), the contrast ratio fails WCAG AA.
+
+**N5 instance.** `--color-text-muted: #6F6D66` was used in
+`.primary-nav a`, `.app-header .icon-btn`, and elsewhere. On
+white bg: 4.94 contrast (passes AA). On the tea-green
+`--header-bg: #cfd8b5`: 3.48 contrast (fails AA). axe-core
+flagged 408+ violation instances on the homepage alone (each
+nav-link is one instance, but axe walks the DOM tree so
+descendant elements compound).
+
+A parallel case: `--color-text-faint: #9A968C` on the white
+footer = 2.95 contrast (fails AA). axe-core caught
+`.footer-disclaimer` rendering with the faint variant.
+
+**Fix pattern.** Introduce a `--color-text-on-<surface>` token
+per non-white branded surface:
+
+```css
+:root {
+  --color-text:           #1F1F1C;
+  --color-text-muted:     #6F6D66;  /* on white / surface */
+  --color-text-on-header: #4A4A47;  /* on --header-bg #cfd8b5 */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-text-on-header: var(--color-text-muted);
+    /* dark mode muted #A8A59C on dark header #2a3a2c = 5.76 ✓ */
+  }
+}
+```
+
+Wire the surface-specific token in every selector that lives on
+the branded surface. Keep `--color-text-muted` for white/surface
+contexts (a global darken would change the whole type rhythm).
+
+For "faint" treatments on white: if the legal/design ask is
+"faint but readable," the muted variant (4.94 contrast) is the
+right floor. Don't ship `--color-text-faint` (#9A968C) where
+WCAG AA matters; reserve it for non-functional decorative copy.
+
+**For Nx:** audit each NEW non-white branded surface with axe-
+core during the design stage, not during the CI-recovery
+stage. The contrast pair (fg color × bg color) is part of the
+token system, not an afterthought.
+
+### F.40.6 Class F — Cross-platform snapshot baselines class
+
+**Pattern.** Visual-regression tests with `playwright`-style
+screenshot baselines tag each baseline with the OS (`-win32.png`,
+`-linux.png`, `-darwin.png`). If the dev box that captures the
+baselines runs Windows but CI runs Linux, the suite hits a 100%
+miss rate on every CI run: it requests `-linux.png` files that
+have never been generated, falls through to "snapshot doesn't
+exist, writing actual," and reports each missing baseline as a
+test failure.
+
+**N5 instance.** 76 committed PNGs all named `-win32.png`. Every
+CI run after the suite was wired (2026-05-03 DEFER-6 closure)
+reported 38 unique "snapshot doesn't exist" failures. The 15-
+min cancellation had been masking the count; once the suite ran
+to completion, the failures became visible.
+
+**Fix pattern.** Three options, in order of effort:
+
+A. **Skip on CI temporarily.** `test.skip(!!process.env.CI,
+   'baselines are -win32; Linux baselines need separate regen')`.
+   Local dev still gets the diffing. Buys time for option B/C
+   without leaving CI red.
+
+B. **Workflow-dispatch regenerate.** Add a `workflow_dispatch`
+   input `update-snapshots: true`. When triggered, the
+   workflow runs `npx playwright test --update-snapshots` and
+   uploads the new PNGs as an artifact. Download + commit
+   manually.
+
+C. **Per-OS baselines committed.** Run `--update-snapshots` on
+   every supported platform; commit both `-win32.png` AND
+   `-linux.png` (and `-darwin.png` if Mac dev exists). Larger
+   repo but no migration friction.
+
+**For Nx:** never commit visual-regression baselines from a dev
+box whose OS differs from the CI runner. Either generate them
+on the runner (option B/C) or skip on CI from day one (option
+A) until you can.
+
+### F.40.7 Operational rule — "the discovery cascade rule"
+
+When an infrastructure fix unblocks visibility, treat the next
+N hours as **observation time, not fix time**. The first
+green-ish run after the unblock is the discovery moment.
+Budget triage as a separate phase:
+
+1. Capture the full failure list (`gh run view --log-failed`).
+2. Bucket failures by class (test-side vs product-side; new
+   regression vs pre-existing drift).
+3. Stack-rank by fix cost AND blast radius. Cheap fixes first
+   to thin the failure count; structural fixes second.
+4. Commit in batches with explicit per-batch scopes ("4 stale
+   assertions" / "a11y CSS fix" / "rule-order swap"). Each
+   batch should be revertable without affecting the next.
+5. After every batch, re-read the CI log. New failures may
+   surface as old ones get out of the way.
+6. The final batch is doc-propagation per Rule 4 + bug-sheet
+   registration per Rule 5 — capturing the learnings before
+   they fade.
+
+This applies generally: every "fix unblocks visibility"
+moment in a build pipeline (CI timeout fix, log-level fix,
+infrastructure migration, sandbox upgrade) gets this discipline.
+
 ## F.13 What this appendix does NOT cover
 
 - **Native-human review workflow** — what to hand to a native
