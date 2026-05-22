@@ -10926,5 +10926,336 @@ deployment-as-part-of-same-commit operational rule generalizes
 the lesson; JA-137 (narrow off-by-one detector) + JA-139
 (mixed-script mojibake detector) added to CI; JA-121 trigger set
 extended in place (no new JA-NN number — preferred when an
-existing detector's intent already matches the new class).*
+existing detector's intent already matches the new class).
+Extended 2026-05-22 with F.43 (5-bug DOCS-* close-out from
+review-packet meta-audit — DOCS-VOCAB-006 / DOCS-CORE-001 /
+DOCS-BRAND-001 / DOCS-Q-001 / DOCS-DKE-001). Captures five
+durable governance-doc consistency defect classes + three new CI
+invariants JA-147 / JA-148 / JA-149 + the bug-spec-vs-reality
+verification reinforcement that rejected DOCS-VOCAB-005 as a
+stale-snapshot artifact. Pairs with F.42's reactive→proactive
+lesson: the meta-audit pipeline surfaces the unknown-unknown
+classes; F.43's specific defect classes are named patterns that
+JA-NN invariants now prevent re-introduction of.*
+
+## F.43 Governance-doc consistency defect classes from review-packet meta-audit (added 2026-05-22)
+
+Five durable defect classes generalized from the N5 DOCS-VOCAB-006 /
+DOCS-CORE-001 / DOCS-BRAND-001 / DOCS-Q-001 / DOCS-DKE-001
+close-out batch (BUG-156..160). All five surfaced from a
+**review-packet meta-audit** — a separately-running audit
+pipeline that consumes a sanitized snapshot of the project and
+returns bug candidates. The pipeline catches classes that the
+in-tree CI invariants don't, **but its bug claims must be
+verified against current data** before any fix lands (per
+F.41.4) because the snapshot timestamp may lag the working tree.
+
+### F.43.1 Bug-spec-vs-reality verification — proof-point reinforcement
+
+**N5 evidence (2026-05-22).** The review-packet meta-audit
+filed DOCS-VOCAB-005 as "CARRY-OVER — fix not applied; all 28
+paper files still hold `source_file: KnowledgeBank/<x>_questions_n5.md`."
+Verification against the working tree showed all 28 already held
+the literal sentinel `"(authored in-place)"` since the actual fix
+landed (commit `b7f5787`, hours before the audit ran). The
+review-packet snapshot pre-dated the fix.
+
+Per F.41.4: **every bug-spec from an autonomous audit pipeline
+must be verified against current data BEFORE applying any fix.**
+This applied:
+- 1 of 6 candidates rejected as stale-snapshot artifact;
+- 5 of 6 verified real and shipped.
+
+**Lesson for Nx-builders:** when the meta-audit pipeline files
+N bugs, expect 1-2 of them to be stale-snapshot artifacts. The
+verification step is the gate, not the bug filing.
+
+### F.43.2 Class A — Known-mismatch enumeration drifts from computed set
+
+**Anti-pattern.** A README documents "Known mismatches (N)"
+between two related data files. The author maintains both sides
+by hand. Over time, one side gains or loses entries while the
+README is forgotten — the documented count and the actual
+computed count diverge silently.
+
+**N5 evidence (DOCS-VOCAB-006).** `n5_vocab_whitelist_README.md`
+documented 3 known whitelist↔vocab.json mismatches (`倍`, `国籍`,
+`週末`); the actual computed mismatch set had 4 entries — `では`
+had been added to the whitelist but never authored as a
+standalone vocab.json entry, and the README was never updated.
+
+**Fix pattern.** Two parts:
+
+1. **Author the missing case** in the README (or in the data
+   it's tracking, if the missing piece is authoring work).
+2. **Wire a CI invariant** that compares the README's
+   enumeration to the actual computed set. The invariant must
+   parse the README structure (section header count + bulleted
+   tokens) and compare to the set computed at CI time.
+
+**CI invariant template (Python, generic):**
+
+```python
+def _check_jaN_readme_known_mismatches_parity():
+    actual = compute_actual_mismatches()  # set of tokens
+    readme_text = (REPO / "docs" / "FILE_README.md").read_text(...)
+    header_count_m = re.search(r"###\s+Known mismatches\s*\((\d+)\s*,", readme_text)
+    declared_count = int(header_count_m.group(1))
+    bullet_section = extract_section_after_header(readme_text)
+    declared_tokens = set(re.findall(r"^\s*-\s+`([^`]+)`", bullet_section, re.M))
+    failures = []
+    if declared_count != len(actual):
+        failures.append(f"...header count {declared_count} != actual {len(actual)}...")
+    if declared_tokens != actual:
+        failures.append(f"...bulleted set != actual set...")
+    return failures
+```
+
+**N5 instance:** JA-147.
+
+### F.43.3 Class B — Multi-source classification, one source updated
+
+**Anti-pattern.** A taxonomy / classification lives in one
+authoritative file (e.g., `n5_core_pattern_ids.json` classifies
+patterns as core / late / deferred), but consumers read a
+different file (e.g., `grammar.json` is the per-entry catalog).
+When the authoritative file changes a classification but the
+per-entry catalog doesn't reflect it, downstream consumers
+(lint, paper-builder, live UI) can't distinguish the reclassified
+entries from in-scope ones.
+
+**N5 evidence (DOCS-CORE-001).** 5 patterns were classified
+`deferred_to_n4` in `n5_core_pattern_ids.json` but had no
+`scope` / `status` / `excluded` / `scope_note` field in
+`grammar.json`. Consumers reading grammar.json couldn't filter
+them out of N5 scope. Three operational consequences:
+
+1. `version.json.counts.grammar` reported 178, but 5 were
+   out-of-scope (effective N5 count = 173). Silent.
+2. lint tools deriving N5 scope from grammar.json implicitly
+   blessed `〜だろう` / `〜なくちゃ` etc. as N5-allowable.
+3. The live UI surfaced deferred patterns to N5 learners.
+
+**Fix pattern.** Mirror the classification into the per-entry
+catalog with a dedicated field:
+
+1. Add a `scope` (or `status` / `category`) field to each
+   per-entry record reflecting the authoritative classification.
+2. Add a sibling `<field>_note` (e.g., `scope_note`) field with
+   prose justifying the classification + reference to the
+   authoritative source.
+3. Update consumer count fields (e.g., add `version.json.counts.
+   grammar_n5` alongside `grammar`) so the in-scope count is
+   first-class.
+4. **Wire a CI invariant** that verifies per-entry classification
+   matches authoritative classification. Both sides agreement is
+   the test:
+
+```python
+def _check_jaN_classification_agreement():
+    auth = load_authoritative_classification()  # dict: id -> category
+    per_entry = load_per_entry_catalog()
+    failures = []
+    for entry in per_entry:
+        eid = entry["id"]
+        cat = auth.get(eid)
+        if cat is None:
+            failures.append(f"id {eid} not in authoritative classification")
+            continue
+        # Verify per-entry field reflects authoritative
+        if cat == "deferred_to_n4" and entry.get("scope") != "n4":
+            failures.append(f"id {eid} classified {cat} but scope={entry.get('scope')!r}")
+        elif cat in ("core_n5", "late_n5") and entry.get("scope") not in (None, "n5"):
+            failures.append(f"id {eid} classified {cat} but scope={entry.get('scope')!r}")
+    return failures
+```
+
+**N5 instance:** JA-148. JA-107 extension recognized the new
+`grammar_n5` scope-filtered count.
+
+### F.43.4 Class C — Review-packet strip, undocumented in the packet's own README
+
+**Anti-pattern.** A build script generates a sanitized export
+of the project (review packet, anonymized data set, public
+release bundle) by stripping certain fields. The strip protects
+privacy / hides brand identity / removes CI noise. But the
+packet's own README enumerates "What was stripped" without
+listing all the strip categories. Reviewers see fields that
+appear empty/wrong and reasonably conclude the live system has
+a bug.
+
+**N5 evidence (DOCS-BRAND-001).** `tools/build_review_packet.py`
+zeros all string values in `branding.json` (privacy/anonymity
+strip to protect brand-identifying content). The packet's own
+README's "Stripped (review-noise)" section enumerated `_meta`,
+timestamps, audio file paths, hash fields — but did NOT mention
+the branding strip. Reviewers reading the empty `brand.name` /
+`meta.title` / `og_*` fields would reasonably conclude the live
+site has no SEO / no header / broken branding. (The live site
+works fine; `index.html` hardcodes the brand strings.)
+
+**Fix pattern.**
+
+1. **Document every strip in the packet's own README.** Each
+   strip rule needs an explicit bullet: what's stripped, why,
+   and where the unstripped data actually lives.
+2. **Embed the strip documentation in the builder script** (not
+   just in a hand-edited README) so the documentation survives
+   regeneration. The builder writes a templated README that
+   already lists all strips.
+3. **Distinguish "stripped for privacy" from "stripped because
+   noise"** — reviewers need to know which fields are
+   intentionally blank vs which would be a real defect.
+
+**Operational rule:** the README that ships with a sanitized
+packet must enumerate every category of stripping the builder
+performs. The list lives in the builder source, not just in the
+packet artifact (which gets regenerated).
+
+### F.43.5 Class D — "Bank source" / "derived from" terminology overclaim
+
+**Anti-pattern.** A README describes two independent data
+corpora as if one were derived from the other. The terminology
+("bank source", "derived from", "drawn from") implies a
+many-to-one or one-to-one relationship that doesn't exist. New
+contributors assume the relationship and try to "reconcile" the
+two, wasting effort or introducing bugs.
+
+**N5 evidence (DOCS-Q-001).** `n5_vocab_whitelist_README.md`'s
+consumers section described `data/questions.json` (290 entries,
+`q-NNNN` IDs, drill-bank schema) as a "bank source" for the
+paper files (`data/papers/<cat>/paper-{1..7}.json`, 402
+questions, `Q1..Q102` IDs, different schema). The actual ID
+overlap = 0. Different ID schemes. Different schemas
+(`correctAnswer` string vs `correctIndex` int; per-option
+distractor explanations vs none; `category`/`mondai` fields vs
+none). The two corpora are PARALLEL, not source-and-derived.
+
+**Fix pattern.**
+
+1. **Reserve "source of" / "derived from" / "bank source" for
+   actual source-derived relationships.** When two corpora are
+   independent, use independent-corpora language:
+   - "Used in spaced-repetition flows"
+   - "Used in mock-test simulations"
+   - "Independent corpus from X with different schema and ID scheme"
+   - "0 ID overlap with Y"
+2. **If a reconciliation is planned**, document the migration
+   path explicitly. If not planned, make the independence
+   permanent in the README so contributors don't try to
+   "fix" it.
+
+### F.43.6 Class E — Placeholder boilerplate as "this'll get filled in later"
+
+**Anti-pattern.** Pre-formalization authoring (the early phase
+of a new field where rationale isn't recorded per-item) leaves
+placeholder boilerplate in production data: "Pre-formalization
+(initial dokkai authoring; rationale not individually recorded)."
+The placeholder is honest about its emptiness but adds no
+information. Later authoring batches add real per-item rationales
+to NEW entries but never backfill the placeholders. Over time,
+the placeholder ratio drifts — by the time someone audits, 28%
+of entries are placeholders.
+
+**N5 evidence (DOCS-DKE-001).** 25 of 90 (28%) entries in
+`data/dokkai_kanji_exception.json` carried the placeholder
+boilerplate. 65 of 90 (72%) had real per-item rationales
+authored 2026-05-XX. The 25 placeholders all had
+`addedAt: "<2026-05-02"` — the formalization deadline.
+
+**Fix pattern.**
+
+1. **Backfill placeholder entries.** For each placeholder, find
+   the actual usage in the surrounding corpus and write a
+   specific rationale. Format matches the real entries.
+2. **Wire a CI invariant** that REJECTS placeholder phrasings.
+   The placeholder text becomes a CI failure trigger:
+
+```python
+def _check_jaN_no_placeholder_boilerplate():
+    PLACEHOLDER_PHRASES = [
+        "Pre-formalization",
+        "rationale not individually recorded",
+        "TBD",
+        "TODO: write rationale",
+    ]
+    failures = []
+    for entry in load_target_corpus():
+        text = entry.get("reason") or entry.get("rationale") or ""
+        for phrase in PLACEHOLDER_PHRASES:
+            if phrase in text:
+                failures.append(f"{entry['id']}: reason contains placeholder {phrase!r}")
+                break
+    return failures
+```
+
+**N5 instance:** JA-149. The 25 backfilled rationales used the
+surface-citation format from the 65 real entries (e.g., "京 →
+東京 / 大阪 placenames in paper-3 Passage 24"), maintaining
+consistency.
+
+**Operational rule:** placeholder boilerplate has a half-life.
+Mark it with a sentinel + author a CI gate that fires after a
+chosen deadline (e.g., "any placeholder still present after
+2026-12-01 fails CI"). Or backfill immediately. Don't ship
+placeholders to long-term storage without a forcing function.
+
+### F.43.7 Same-batch CI-invariant authoring discipline
+
+All 5 fixes in this batch added or extended a CI invariant in
+the SAME commit as the fix:
+
+| Defect class | Fix | CI invariant |
+|---|---|---|
+| F.43.2 README-vs-computed | Document new mismatch in README | JA-147 (parity check) |
+| F.43.3 Multi-source classification | Add scope field per entry | JA-148 (classification agreement) |
+| F.43.4 Review-packet strip undocumented | Document strip in builder + README | (No CI; build-script templated) |
+| F.43.5 "Bank source" overclaim | Rewrite README consumers section | (No CI; terminology, not data) |
+| F.43.6 Placeholder boilerplate | Backfill 25 + reject phrasings | JA-149 (phrase rejection) |
+
+3 of 5 classes shipped a CI invariant. 2 (Class C, Class D)
+remain terminology / build-script discipline. This ratio is
+expected: data-shape problems are CI-enforceable; terminology /
+build-script-output problems live in conventions.
+
+**Operational rule (Nx generalization):** for every batch
+close-out, classify each defect by:
+- "Data-shape, CI-enforceable" → mint or extend a JA-NN.
+- "Terminology / convention / one-time edit" → document in
+  procedure manual + README + build script.
+
+The class determines the forcing function (CI for shape,
+conventions for terminology).
+
+### F.43.8 Bounded-coverage phrasing for the batch
+
+When closing this class of batch in audit-coverage docs, use:
+
+- "JA-NNN catches *the specific README-vs-computed mismatch-set
+  divergence*" — does not catch other README-vs-data drift classes
+  not specifically wired.
+- "JA-NNN catches *the specific scope-field-vs-classification
+  disagreement*" — does not catch broader multi-source consistency
+  bugs beyond the named classification.
+- "JA-NNN catches *the specific placeholder phrasings*" — does not
+  catch all unspecific rationales (e.g., "see notes elsewhere",
+  "TBD by editor", various other vague phrasings).
+- "Bug-spec verification rejected N of M candidates as stale-
+  snapshot artifacts" — names the verification step + reports
+  honestly the fraction rejected.
+
+### F.43.9 Same drift-class lineage table
+
+| Class | First seen | Next sighting | Lesson |
+|---|---|---|---|
+| README-vs-computed drift | DOCS-VOCAB-006 (2026-05-22) | — | New JA-NN at parity-check time |
+| Multi-source classification | DOCS-CORE-001 (2026-05-22) | — | Mirror classification into per-entry field + CI |
+| Review-packet strip undocumented | DOCS-BRAND-001 (2026-05-22) | — | Embed strip docs in builder script |
+| "Bank source" terminology overclaim | DOCS-Q-001 (2026-05-22) | — | Reserve source-derived terms; otherwise call out independence |
+| Placeholder boilerplate at-rest | DOCS-DKE-001 (2026-05-22) | — | Phrase-rejection CI invariant |
+
+For Nx, predict these classes as part of the batch close-out
+template: the meta-audit will surface them, and the procedure
+manual section names them so the fix is mechanical rather than
+re-invented.
 
