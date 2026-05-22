@@ -11600,3 +11600,111 @@ For Nx, the meta-audit will surface these classes again with
 different content. The procedure-manual section catalogs the
 patterns so the next round is mechanical rather than reinvented.
 
+### F.44.15 Deferred-item batch closure — cohort sweeps, annotation-only fixes, and sample audits (added 2026-05-23)
+
+F.44.12 step 3 says "ship Severity-1 first; Severity-3 polish can
+land in a follow-up." Empirically, **every native-teacher batch
+leaves 1-3 items deferred at first-pass close** because they
+require methodology decisions, not data edits. The 2026-05-22
+NTR batch closed 13 of 13 surfaced items but explicitly deferred
+three follow-ups: (5) cohort sweep over OTHER kanji mnemonics
+after the 三 finding (NTR-007), (6) NHK 2016 verification of
+the 4 pitch-accent flags (NTR-008), and (7) spot-check OTHER
+LLM-curated vocab examples for regressions beyond the
+kanji-whitelist breach (NTR-001). These three close-out shapes
+generalize to Nx-builders.
+
+**Three deferred-item close-out shapes.**
+
+**Shape 1 — Cohort sweep when one finding implies a class.**
+When a single defect (e.g., 三 mnemonic claims false shared
+etymology with -さん honorific) is fixed in the primary batch,
+the question "are there OTHER items in the same class?" remains
+open. Resolve by mechanical sweep over the cohort with a
+text-pattern audit tool. N5 instance: `audit_kanji_mnemonic_
+etymology_2026_05_22.py` scanned all 106 kanji mnemonic fields
+for the regex `r"(borrowed everywhere|borrowed from|comes from|
+same root|honorific|particle|-さん|-さま)"`. Found 1 hit
+(八 mnemonic conflated 蜂 "bee" pronunciation with 八 itself).
+Softened to "shared sound is a useful memory hook, not a
+derivation." Result: 104 of 106 mnemonics clean (the original
+三 finding + 八 cohort hit). Pattern-set is bounded; the audit
+is NOT a guarantee of "no etymology errors in the corpus" —
+it's a guarantee of "no instances matching these N patterns
+in the corpus snapshot scanned."
+
+**Shape 2 — Annotation-only when the source-of-truth conflict
+is unresolvable autonomously.** When a defect is "data value
+disagrees with canonical reference X" AND the Nx-builder can
+not authoritatively verify against X without a native-speaker
+pass, **do not auto-correct**. Annotate. N5 instance: NTR-008
+listed 4 pitch-accent flags. The review cited NHK 2016 drop
+values. But the reviewer is the same author as the audit
+pipeline that produced the data; elevating the review's NHK
+claims to authoritative would be circular. Resolution:
+`fix_pitch_accent_nhk_refinement_2026_05_22.py` added per-entry
+`nhk_2016_claim_drop` / `nhk_2016_claim_drops_by_sense`
+metadata + `audio_uses_drop` (source of truth for rendered
+material) + `nhk_2016_claim_provenance: "review-cited, pending
+actual NHK source verification"`. The primary drop values were
+NOT changed. The final native-speaker pass (per
+NATIVE-SPEAKER-RE-VERIFICATION.md) remains the gating step.
+Pattern: when the only verifier is the author, prefer
+annotation that preserves the gap over auto-correction that
+masks it.
+
+**Shape 3 — Deterministic-stratified sample audit with named
+dimensions and bounded-honesty result.** When a finding implies
+"there may be MORE of this class hiding elsewhere in the
+corpus" (e.g., the LLM-curation pass that introduced 99
+kanji-whitelist violations may have introduced OTHER classes
+of LLM regression), a full corpus audit is too expensive but
+random spot-checks produce false positives (per N5Improvement
+"Anti-pattern A"). Resolution: deterministic stratified
+sample with SHA256 seeding for reproducibility, named
+dimensions (D1 over-formal, D2 unidiomatic, D3 headword-absent,
+D5 template-cluster) with explicit regex/heuristic patterns,
+result bounded to those dimensions. N5 instance:
+`audit_llm_curated_vocab_sample_2026_05_22.py` sampled 99 of
+914 llm_curated examples (10.8% rate, stratified by section,
+SHA256-seeded by `f"{vocab_id}|{ex_idx}"`). Result: 0 real
+findings across all 4 dimensions. The 3 D3 (headword-absent)
+hits were ALL false positives caused by rendaku and する-verb
+conjugation. Bounded-honesty phrasing: "0 findings against the
+named D1/D2/D3/D5 dimensions on the sample scanned" — does
+NOT assert the LLM layer is regression-free; the audit did
+not sample at 100%, did not name every possible LLM-regression
+class, and rendaku-style false positives suggest tighter
+matching primitives would be needed for confident closure.
+
+**Operational rule (F.44.15 extension to F.44.12 step 6).**
+Batch the three deferred-item close-out commits as a single
+`audit(...) / fix(...) / fix(...)` triple, then ONE Rule 4/5
+propagation commit covering all three (this sub-section).
+Don't do per-item propagation for cohort/annotation/sample
+audits — they share the methodology pattern and a single
+propagation commit captures it.
+
+**Bounded-coverage phrasing for deferred-item batches.**
+
+- "Cohort sweep over 106 kanji mnemonics — 1 of 106 hit;
+  pattern-set covers N regex patterns" — does NOT claim
+  "no etymology errors remain in the corpus." Pattern-set is
+  the bound.
+- "3 of 4 pitch-accent entries annotated with NHK-claim
+  metadata; 1 confirmed match; primary drop values
+  UNCHANGED" — does NOT claim "pitch-accent verified against
+  NHK 2016." Annotation preserves the gap.
+- "0 findings against named D1/D2/D3/D5 dimensions on 99/914
+  llm_curated examples (10.8% stratified sample, SHA256-seeded)"
+  — does NOT claim "LLM-curated layer is regression-free."
+  Sample rate + named dimensions are the bound.
+
+### F.44.16 Same drift-class lineage table extension for deferred items
+
+| Class | First seen | Lesson |
+|---|---|---|
+| Cohort sweep methodology (F.44.15 Shape 1) | NTR-007 cohort (2026-05-23) | When one finding implies a class, sweep the cohort with regex-pattern audit; result bounded to pattern-set |
+| Annotation-only when verifier == author (F.44.15 Shape 2) | NTR-008 NHK refinement (2026-05-23) | When the only verifier is the author of the audit, annotate to preserve the gap; don't auto-correct (circular authority) |
+| Deterministic-stratified sample audit (F.44.15 Shape 3) | NTR-001 cohort spot-check (2026-05-23) | Named dimensions + SHA256 seeding + bounded-honesty result; rendaku/conjugation false positives need tighter primitives |
+
