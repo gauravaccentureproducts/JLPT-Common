@@ -10166,6 +10166,176 @@ in the same close-out commit" — to the case where the inactivity
 window was years long and the backlog is too large to absorb in
 one commit.
 
+## F.41 Canonical-sentinel pattern + multi-case-bug close-out discipline (added 2026-05-22)
+
+Two related learnings from the DOCS-VOCAB-003 → DOCS-VOCAB-005
+close-out cycle on N5. Both generalize to Nx.
+
+### F.41.1 Canonical-sentinel pattern for authored-in-place data-metadata fields
+
+**The pattern.** When a JSON data-file carries a metadata field
+that represents provenance ("where did this content come from") and
+the content might be either externally sourced OR authored in-place,
+define a literal canonical sentinel string for the in-place case
+and a parallel resolvable-path branch for the external case. The
+CI invariant accepts EITHER:
+  (a) a path that resolves to an existing repo file, OR
+  (b) the literal sentinel string (e.g. `"(authored in-place)"`).
+
+Anything else fails. Specifically:
+- Parenthesized prose other than the literal sentinel.
+- Paths that don't resolve.
+- Empty strings, nulls if the schema requires a string.
+
+**Why this pattern.** When the upstream source file gets deleted
+(a refactor, a merge, a DMCA takedown, a legal vetting batch), the
+metadata field is left in three possible states:
+
+  - Keep the prose breadcrumb: "(authored in-place; was X.md before
+    Y/ merge on YYYY-MM-DD)". Readable but embeds the deleted
+    directory name in 28+ files, leaking into search results,
+    `git grep`, CI scans, and confusing future readers.
+  - Replace with a "best-fit pointer": "docs/methodology.md#X" or
+    "docs/<something>.md". Often factually wrong (the new doc
+    doesn't actually contain the content), and silently degrades
+    correctness while looking like a fix.
+  - Replace with literal sentinel: `"(authored in-place)"`. Honest,
+    minimal, machine-readable, future-source-aware (the field can
+    still hold a real path the day a paper is genuinely externally
+    sourced), and CI-verifiable.
+
+**The CI invariant template** (Python, generic):
+
+```python
+def _check_ja_NNN_field_canonical_sentinel(
+    glob_pattern: str,
+    field_name: str,
+    sentinel: str,
+    repo_root: Path,
+) -> list[str]:
+    """Field must be literal sentinel OR resolvable path."""
+    import json, glob
+    failures = []
+    for fp in sorted(glob.glob(glob_pattern)):
+        d = json.load(open(fp, encoding="utf-8"))
+        v = d.get(field_name)
+        if not isinstance(v, str):
+            failures.append(f"{field_name} missing or wrong type in {fp}")
+            continue
+        if v == sentinel:
+            continue  # sentinel branch — pass
+        if v.startswith("("):
+            failures.append(
+                f"{field_name} in {fp} is parenthesized prose other "
+                f"than canonical sentinel {sentinel!r} — got {v!r}"
+            )
+            continue
+        if not (repo_root / v).exists():
+            failures.append(
+                f"{field_name} path {v!r} in {fp} does not resolve"
+            )
+    return failures
+```
+
+**Bounded-coverage caveat.** The pattern catches *values that are
+neither the literal sentinel nor a resolvable repo path*. It does
+NOT catch a future case where the path resolves but is semantically
+wrong (e.g. points at the wrong file in the right shape). For that,
+a per-domain content-equivalence check is needed — out of scope of
+the sentinel pattern.
+
+### F.41.2 Multi-case-bug close-out discipline
+
+**The anti-pattern.** A bug filing lists multiple resolution paths:
+
+  > "Either (a) update the README, or (b) update the 28 paper files."
+
+A subsequent fix takes only case (a) and marks the bug Fixed. The
+unaddressed case (b) is silently buried. Months (or in the N5
+case, hours) later, a separate audit surfaces case (b) as a "new"
+bug — wasting filing-cycle and audit-cycle time.
+
+**N5 proof point.** DOCS-VOCAB-003 (filed 2026-05-21) listed both
+cases. Its fix updated the README (case (a)) without touching the
+28 paper-file `source_file` fields (case (b)). Status flipped to
+Fixed with empty Fix Date / empty Fix Notes / a date string in the
+Fix Commit cell (instead of a hash). DOCS-VOCAB-005 (2026-05-22)
+re-discovered the unaddressed case (b) less than a day later.
+
+**The discipline (mandatory in close-out).** Every multi-case bug
+close-out must explicitly state, in the Fix Notes:
+
+  1. Which case(s) the close-out actually addressed.
+  2. For each remaining case: either "resolved-in-this-batch by
+     <X>" OR "filed-as-follow-up under <BUG-NNN>".
+  3. If no follow-up is filed for a remaining case, the bug stays
+     Open until all cases are resolved or explicitly declined-with-
+     reason.
+
+**Detector idea (not yet implemented).** A CI invariant could grep
+bug-tracker Fix Notes for "case (a) or case (b)" / "case (a) and
+case (b)" / "case ([a-z])" phrasing and verify that the Fix Notes
+explicitly enumerate each lettered case. Not wired on N5 yet — the
+volume of multi-case bugs is low enough to rely on close-out
+discipline; if the pattern recurs, automate.
+
+### F.41.3 Honest provenance during prose-cleanup
+
+When trimming historical breadcrumb prose, the rule:
+- Trimmed-to value must remain truthful for the current file
+  (e.g., `"(authored in-place)"` is true; the bug-spec's proposed
+  `"docs/X.md#anchor"` was not).
+- Historical breadcrumb is preserved in the audit-trail artifacts
+  (CHANGELOG, README, git history) — never silently destroyed.
+- The CI invariant must accept BOTH the new sentinel AND any
+  legitimate future path; not just the sentinel. Otherwise the
+  field becomes vestigial.
+
+### F.41.4 Bug-spec-vs-reality verification (mandatory pre-fix step)
+
+Always reproduce the bug claim against actual data BEFORE applying
+the proposed fix. The DOCS-VOCAB-005 spec claimed broken file-path
+references on the 28 paper files; verification showed the values
+were explicit parenthesized prose annotations. The proposed fix
+would have replaced truthful prose with a non-existent pointer.
+
+**The discipline (extends F.37.1 horizontal-deployment rule):**
+- Read the actual file content of the claimed-defective fields.
+- Don't trust the bug-spec's textual claim; verify with `grep` or
+  `jq` or `git show`.
+- If the spec's premise is wrong (the actual state doesn't match
+  the claim), surface to the user with the actual content +
+  alternative options. Don't silently degrade.
+- If the spec's premise is right but the proposed fix is wrong
+  (the right diagnosis, the wrong cure), surface similarly.
+
+This rule applies *every time* a bug-spec is filed by an autonomous
+audit pipeline. Pipelines pattern-match against substrings without
+parsing semantics; humans (or LLMs with verification discipline)
+have to confirm the match-to-defect mapping is real.
+
+### F.41.5 Bounded-coverage phrasing for the canonical-sentinel pattern
+
+When closing batches of this class in audit docs, use:
+
+- "JA-NNN catches *values that are neither the literal sentinel
+  nor a resolvable repo path*" — does not catch semantically-wrong
+  resolvable paths.
+- "Canonical-sentinel pattern at *this one field*" — generalising
+  to other authored-in-place fields needs separate JA-NN with the
+  sentinel string each field uses.
+- "Historical breadcrumb preserved in CHANGELOG / README / git
+  history; relocated from N files of data-metadata" — explicit
+  that the information moved, not vanished.
+- "Multi-case bug closed on cases (a) and (b)" / "Multi-case bug
+  closed on case (a) only; case (b) filed-as-follow-up under
+  BUG-NNN" — never silent partial closure.
+
+Generalizes F.37.6's horizontal-deployment-as-part-of-fix-commit
+rule + F.38.5's newly-wired-invariant-runs-corpus-wide rule to
+the case where the defect class is a metadata-field convention
+rather than a content-mismatch / content-quality class.
+
 ## F.40 CI-recovery triage — 6 durable classes from "what does a green-then-honest CI suite actually surface?" (added 2026-05-21)
 
 The N5 CI-recovery triage produced six durable classes that
