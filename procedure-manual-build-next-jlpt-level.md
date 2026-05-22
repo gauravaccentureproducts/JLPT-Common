@@ -11708,3 +11708,79 @@ propagation commit captures it.
 | Annotation-only when verifier == author (F.44.15 Shape 2) | NTR-008 NHK refinement (2026-05-23) | When the only verifier is the author of the audit, annotate to preserve the gap; don't auto-correct (circular authority) |
 | Deterministic-stratified sample audit (F.44.15 Shape 3) | NTR-001 cohort spot-check (2026-05-23) | Named dimensions + SHA256 seeding + bounded-honesty result; rendaku/conjugation false positives need tighter primitives |
 
+### F.44.17 Stale-snapshot re-paste of a previously-closed review (added 2026-05-23)
+
+**Anti-pattern.** A native-teacher or external review document gets
+re-pasted into the project after a batch has already closed against
+the earlier version. Without verify-before-fix discipline (F.41.4),
+the temptation is to re-file all N items as new bugs — polluting
+the tracker with N redundant entries, several of which fail re-
+verification within minutes because the data has already moved.
+
+**N5 instance (2026-05-23 NTR re-paste).** The 2026-05-22 NTR-001..013
+review document was re-pasted as "Pending bugs (13 items)" on
+2026-05-23. Verify-against-current-data pass found:
+  - 9 of 13 already closed within this session (NTR-001..013 batch:
+    99 vocab kanji breaches → JA-150 + 99 rewrites; n5-045
+    deprecated; section retags; gloss flips; usage_note added;
+    mnemonic softened; pitch-accent NHK-claim metadata; q-0226
+    contrast note) — verified-stale-snapshot, rejected as filings.
+  - 3 of 13 genuinely-new or broader-scope: whitelist reverse-
+    direction asymmetry (11 vocab forms ungated); listening pacing
+    multi-band exposure (38/50 below JEES-strict but all tagged
+    in_range); collocations templated corpus-wide (983 entries
+    beyond NTR-011's 12 pronouns).
+  - 1 of 13 broader-scope claim rejected with rationale: singular
+    pronouns counting people with 人 IS semantically correct
+    (「あなたは何人いますか」). NTR-013 close for collective pronouns
+    only was bounded-correct.
+
+**Detection.** Before filing ANY bug from a re-pasted review, run
+verification scripts that load current data and check each claim's
+state. Each claim falls into one of three buckets:
+  1. STALE — current data already shows the fix; the claim was real
+     against an earlier snapshot but is now closed. Reject as a
+     filing; document in commit message + AUDIT-COVERAGE that the
+     re-verification ran.
+  2. REAL — current data confirms the claim; file new bug.
+  3. PARTIAL / BROADER-SCOPE — original close was bounded to a
+     subset; re-paste implies the broader scope. Decide whether
+     broader scope is correct: if yes, file as a follow-up bug
+     (NTR-FU-NNN naming) that extends the original; if no, reject
+     with explicit rationale.
+
+**Fix pattern.**
+1. Run claim-by-claim verification BEFORE filing anything (F.41.4).
+2. Categorize into STALE / REAL / PARTIAL / REJECT-with-rationale.
+3. File only REAL + PARTIAL as new bugs.
+4. Annotate STALE in the commit message + audit-coverage entry —
+   preserves the audit trail without polluting the tracker.
+5. Reject REJECT-with-rationale items in the commit message + audit
+   doc; do NOT silently drop them (a future reviewer needs the
+   rationale).
+6. Provenance-stamp the follow-up bugs with their lineage to the
+   original (`NTR-FU-NNN extends NTR-NNN`).
+
+**Bounded-coverage phrasing for re-paste close-out.**
+  - "M of N items from re-paste verified as stale-snapshot
+    (already closed in batch X); K of N filed as new bugs; J of N
+    rejected with rationale" — never "N items closed."
+  - "Re-verification found 9 of 13 already closed within this
+    session against the working tree at HEAD; the remaining 4 split
+    into 3 new follow-up bugs + 1 explicit-rejection" — preserves
+    the categorization for future audit-doc consumers.
+
+**N5 instances:** F.44.17 first surfaced 2026-05-23. Future review
+re-pastes will fall into the same pattern; document the
+re-verification commit in audit-coverage to short-circuit
+re-litigation.
+
+### F.44.18 Same drift-class lineage table extension for re-paste & broader-scope follow-ups
+
+| Class | First seen | Lesson |
+|---|---|---|
+| Stale-snapshot re-paste verification (F.44.17) | 2026-05-23 NTR re-paste | Run verify-before-fix on every claim; STALE/REAL/PARTIAL/REJECT triage; file only REAL+PARTIAL |
+| Reverse-direction CI gate asymmetry (F.44.18 + NTR-FU-001) | n5_vocab_whitelist 2026-05-23 | A CI invariant gates one direction; the reverse direction silently drifts. Detection: enumerate all directional predicates + check both. Fix: add JA-NN for the reverse. |
+| Multi-band metric with single-tier classification (F.44.18 + NTR-FU-002) | listening pacing 2026-05-23 | A continuous metric (pacing mpm) is classified into a single tier ("in_range") when consumers want multiple bands. Fix: expose ideal / strict / lenient bands as parallel fields; keep the single-tier for backward compat; document the methodology decision in _meta. |
+| Field-name overclaim broadened beyond bounded close (F.44.18 + NTR-FU-003) | collocations 2026-05-23 | A field-name fix (NTR-011 rename 12 pronouns) leaves the broader corpus drift. Detection: count entries with the legacy name; if >>fix scope, the close was bounded. Fix: expand the rename to all entries + add JA-NN locking the new name. UI consumers must update in same commit (the NTR-011 close had a silent UI regression for the 12 renamed pronouns). |
+
