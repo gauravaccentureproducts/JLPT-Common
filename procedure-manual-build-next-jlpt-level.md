@@ -11259,3 +11259,344 @@ template: the meta-audit will surface them, and the procedure
 manual section names them so the fix is mechanical rather than
 re-invented.
 
+## F.44 Native-teacher review of a "shippable" corpus — 7 durable findings (added 2026-05-22)
+
+Captures the 13-bug close-out from the N5 v1.15.8 native-teacher
+review (NTR-001..013 → BUG-161..173). The review opened with the
+verdict "this is a strong N5 corpus — better than most commercial
+N5 apps and competitive with Try!/So-matome on substance" and then
+listed 4 Severity-1 + 4 Severity-2 + 5 Severity-3 items, total 13.
+
+**Headline meta-lesson:** when a corpus is "shippable" by structural
+CI gates (whitelist, schema, cross-ref resolution), the remaining
+defects shift from systemic to **per-item content quality** — and a
+native-teacher pass is the only way to surface them. The 13 items
+broke into 7 durable classes that an Nx-builder should anticipate.
+
+### F.44.1 Class A — Multi-artifact discipline that holds on M of N artifacts but slipped on the (N+1)th
+
+**Anti-pattern.** The N5 corpus gated grammar examples / reading
+passages / listening scripts / listening choices against the kanji
+whitelist (∪ dokkai exception). Vocab examples were the outlier —
+not gated. Result: 99 of 3,036 vocab examples leaked non-whitelist
+kanji. The LLM-curation pass introduced ~3× the rate of the human
+baseline (5.8% vs 2.1%) because the LLM didn't know about the
+whitelist that the human authors respected.
+
+**Detection.** For every cross-artifact predicate (whitelist /
+schema / ID-resolution), enumerate the artifacts it should apply
+to + diff against the artifacts it actually applies to. Outliers
+are bugs in the gating, not in the content.
+
+**Fix pattern.**
+1. Authoring fix: re-write the violating items to comply with the
+   predicate (mechanical kana-substitution of side-words was
+   sufficient for 99/99 N5 vocab cases).
+2. Gating fix: add a CI invariant that locks the predicate on the
+   newly-conformant artifact. Generic template:
+
+```python
+def _check_jaNNN_artifact_X_whitelist():
+    WL = load_canonical_whitelist()
+    failures = []
+    for item in load_artifact_X():
+        for offending in offending_tokens(item, WL):
+            failures.append(f"{item.id}: contains {offending}")
+    return failures
+```
+
+3. **Provenance audit.** Did the human-curated baseline have a
+   lower violation rate than later auto-generated batches? If yes,
+   the auto-generation pass needs the same predicate-check the
+   humans were doing implicitly. N5 evidence: LLM 5.8% violations
+   vs human 2.1% = the LLM didn't know what the humans knew.
+
+**N5 instance:** NTR-001 (vocab examples) + JA-150.
+
+### F.44.2 Class B — Duplicate-pattern cleanup that wasn't finished
+
+**Anti-pattern.** Two grammar patterns share the same headword.
+One self-identifies as a duplicate via a `contrasts` block ("This
+is a duplicate entry — see the canonical pattern.") but the
+structural cleanup wasn't completed. Both still appear in the
+canonical pattern list; both serve to learners.
+
+**Detection.** Grep `contrasts[*].note` (and similar prose fields)
+for "duplicate" / "canonical pattern" / "same as" / "alias of"
+phrases. Each hit is a half-finished cleanup.
+
+**Fix pattern (when external references prevent simple deletion).**
+1. Mark the duplicate with `deprecated: true` + `deprecated_reason`.
+2. Set `_alias_of: <canonical_id>` (one-way; canonical does NOT
+   point back).
+3. Keep the duplicate entry in the data file for ID-stability
+   (external references in questions.json / audio_manifest / etc.
+   still resolve).
+4. Add a UI filter to hide deprecated entries from main listings
+   (grammar TOC, etc.); deprecated entries remain reachable via
+   direct ID for backward compatibility.
+
+**N5 instance:** NTR-002 (n5-045 deprecated; n5-017 canonical).
+
+### F.44.3 Class C — Gloss-primary inversion vs modern spoken usage
+
+**Anti-pattern.** A dictionary-derived gloss orders senses by
+classical/literary frequency. Modern spoken usage has inverted the
+sense hierarchy — but the gloss still leads with the formal sense
+and parenthesizes the modern one. Learners encountering the word
+in conversation hear sense B; the gloss tells them sense A is
+primary. They mis-parse.
+
+**Detection.** Per-headword native-speaker spot-check: does the
+gloss's leading sense match what a native speaker thinks when they
+hear the word in isolation? If the leading gloss-sense is
+parenthesized with "(modern)" / "(colloquial)" / "(more common)",
+that's the cue to flip.
+
+**Fix pattern.**
+1. Re-order glosses so the modern-spoken primary is first.
+2. Re-state the formal/literary sense as the secondary with an
+   explicit register marker ("more formal/literary").
+3. Sync gloss_hi (or other locales) in the same commit. Don't ship
+   English-flipped + Hindi-not-flipped (semantic drift).
+4. Provenance: native_reviewed_<date>.
+
+**N5 instances:** NTR-003 (かれ/かのじょ) + NTR-009 (Hindi sync).
+
+### F.44.4 Class D — Pronoun with no register caveat
+
+**Anti-pattern.** A pronoun's gloss is bare ("you" / "he" / etc.)
+when the actual register is restricted: formal-only, intimate-only,
+or marked-only. Generic-pronoun usage produces L2-error patterns
+(L1 maps to "you" → L2 produces あなた everywhere). The gloss
+needs a usage warning.
+
+**Detection.** For every pronoun in the corpus, ask: "would using
+this pronoun freely in conversation flag the speaker as L2?" If
+yes, the gloss needs a register caveat + sample examples in the
+right contexts.
+
+**Fix pattern.**
+1. Add a `usage_note` field with the register restrictions.
+2. Update the gloss with the caveat in parens.
+3. Replace lead example with a context where the pronoun IS
+   appropriate (form-filling, wedding vows, lyrics, etc.) or pivot
+   to the L1-natural alternative (name + さん).
+4. Sync usage_note_hi (or other locales). UI consumers should
+   render the usage note prominently.
+
+**N5 instance:** NTR-004 (あなた).
+
+### F.44.5 Class E — Section / category mislabeling
+
+**Anti-pattern.** A vocab item is filed in a section whose number
+conflicts with another section's number, OR the section semantic
+doesn't match the item (movie filed under furniture). Both surface
+in section-grouped review lists as nonsense entries; both reduce
+learner trust.
+
+**Detection.** Enumerate section labels + cross-tabulate against
+section numbers. Conflicts are duplicates (one section number used
+for two semantic-distinct sections). Per-item semantic-check is
+spot-check work.
+
+**Fix pattern.** One-line section field edits, provenance-stamped.
+A CI invariant could enforce "section number uniqueness across
+labels" for the duplicate-number case, but the semantic-mislabel
+case (movie under furniture) is harder to automate without an
+ontology.
+
+**N5 instances:** NTR-005 (おはし section 20 → 19) + NTR-006
+(えいが section 26 → 37).
+
+### F.44.6 Class F — Etymology-as-mnemonic conflation
+
+**Anti-pattern.** A kanji mnemonic includes an etymological claim
+that's false but cognitively convenient (e.g., "the on-yomi さん
+of 三 is the source of the honorific -さん"). Most learners won't
+notice; curious learners will look it up, find the false claim,
+and lose trust.
+
+**Detection.** Per-mnemonic native-speaker pass over etymology
+claims, specifically. The mnemonic-as-memory-aid pattern is fine;
+the mnemonic-as-history claim is the trap.
+
+**Fix pattern.** Soften the etymology claim without losing the
+mnemonic ("the sound *san* is everywhere in Japanese — so the
+reading is easy to hold onto. (Note: the honorific さん comes
+from a separate root [様 → さま → さん]; the shared sound is
+coincidental.)"). Preserves the cognitive crutch; drops the
+incorrect history.
+
+**N5 instance:** NTR-007 (三 mnemonic).
+
+### F.44.7 Class G — Defensible-but-deviant pitch-accent values
+
+**Anti-pattern.** A pitch-accent lookup produces a primary drop
+value that's defensible (an alternate exists in some dictionaries)
+but doesn't match the canonical reference (NHK 2016 for Japanese).
+The audio recording may use one value; the data lists another. A
+native-pronunciation pass is the only resolution.
+
+**Detection.** Sample-check N pitch-accent values per session
+against NHK 2016 (or the canonical reference). Flag mismatches as
+"native_review_pending" rather than silently shipping.
+
+**Fix pattern.** Annotate, don't auto-correct. Add
+`native_review_pending: '<YYYY_MM_DD>_<source>'` to each flagged
+entry. The audio rendering pass is the source of truth for what
+ships; the dictionary value is the truth for what learners should
+hear in formal contexts. When the two disagree, the annotation
+preserves the gap for the eventual native-speaker pass.
+
+**N5 instance:** NTR-008 (4 pitch-accent flags: 3 annotated, 1
+(これ) confirmed correct).
+
+### F.44.8 Class H — Particle-nuance not flagged in question explanations
+
+**Anti-pattern.** A mock-test question is technically correct
+(the conjugation tested has only one right answer) but the
+surrounding sentence carries a subtle particle-nuance that, in
+natural speech, would imply a meaning the explanation doesn't
+mention. Above-N5 learners notice and feel something's off; the
+explanation doesn't help.
+
+**Detection.** Native-speaker pass over question-bank questions
+specifically for particle-nuance traps in the test sentence. This
+is qualitative; no good CI proxy.
+
+**Fix pattern.** Append a one-line nuance note to explanation_en
+(or explanation_hi parallel). Preserves the question's correctness
+for the conjugation tested; protects the learner who notices the
+wrinkle.
+
+**N5 instance:** NTR-010 (q-0226 は-contrast note).
+
+### F.44.9 Class I — Field-name overclaim ("collocations" for templates)
+
+**Anti-pattern.** A data field is named with a corpus-linguistics
+term (e.g., "collocations") but the content is actually
+mechanically-generated template substitutions. Honest-but-narrower
+naming would be "particle_examples" / "case_marker_examples" / etc.
+
+**Detection.** Per-field semantic audit: does the field name match
+the content? If a field claims to be "collocations" and contains
+the same 6 particle templates substituted with each headword, it's
+not collocations.
+
+**Fix pattern.** Rename the field to reflect the actual content.
+Update UI consumers + grep for old name. Provenance-stamp the
+rename. Real corpus collocations can override the field where they
+exist; the rename doesn't preclude future enrichment.
+
+**N5 instance:** NTR-011 (`collocations` → `particle_examples`
+on 12 pronoun entries).
+
+### F.44.10 Class J — Prescriptive primary reading vs colloquial reality
+
+**Anti-pattern.** A kanji entry's `primary_reading` is the
+prescriptive answer (e.g., 七 = しち) but the colloquial usage
+distribution is split (七つ = ななつ, NHK uses なな for numerals).
+The single primary value hides the split. Learners who studied the
+primary then encounter なな in listening and don't connect them.
+
+**Detection.** Per-kanji reading-distribution audit against actual
+usage in dokkai/listening passages + NHK conventions. Where the
+distribution is split, the primary is misleading.
+
+**Fix pattern.** Keep the prescriptive primary (preserves
+predictability). Append a usage note to `reading_rule` documenting
+the split: "X is prescriptive primary; Y is heard in <contexts>."
+Documents the reality without breaking the primary-reading API.
+
+**N5 instance:** NTR-012 (七 reading_rule + なな-usage note).
+
+### F.44.11 Class K — Counter applied indiscriminately + sub-typo
+
+**Anti-pattern.** A counter field is applied to all members of a
+class (e.g., all pronouns) without checking whether the counter
+makes semantic sense per-item. Collective pronouns (私たち / みなさん)
+don't count themselves; the counter applies to the noun-of-reference.
+Plus: cross-entry typos in the counter values that go unnoticed
+because no CI invariant locks the field shape.
+
+**Detection.** Per-counter semantic check: does counting "1 X, 2 X,
+3 X" produce meaningful output? If not, the counter doesn't apply
+to X itself. Also: enumerate counter.reading values across the class
+and look for outliers (kanji in a kana field, etc.).
+
+**Fix pattern.** For semantically-inappropriate counters: drop the
+field, OR add `applies_to: noun_of_reference` annotation so UI can
+suppress. For typos: fix them; consider a CI invariant locking the
+field shape (counter.reading must be kana-only). Provenance bumped.
+
+**N5 instance:** NTR-013 (collective-pronoun counter annotations +
+みなさん.counter.reading typo).
+
+### F.44.12 Operational rule — when a native-teacher review surfaces N findings, batch the close-out
+
+For Nx-builders running an external native-teacher / JLPT-expert
+review:
+
+1. **Verify every claim against current data** before filing bugs
+   (per F.41.4). A typical review will have 0-15% stale-snapshot
+   artifacts if the data has moved since the snapshot was packaged.
+2. **File all bugs in a single batch** under a prefix that groups
+   them (NTR-NNN / NR-NNN / etc.). This survives future audits as
+   "the 2026-05-22 native-teacher pass."
+3. **Triage by severity (1/2/3) + assign priority (P1..P4).**
+   Ship Severity-1 first; Severity-3 polish can land in a follow-up.
+4. **Bundle related fixes into single commits.** Glosses + Hindi
+   sync (NTR-003 + NTR-009) belong together because the Hindi gloss
+   was downstream of the English. Section retags + same-file edits
+   (NTR-005 + NTR-006) belong together.
+5. **Add CI invariants for the data-shape findings, document the
+   rest as conventions.** Of N findings, M will be data-shape
+   (gateable) and N-M will be terminology / convention. Per F.43.7
+   ratio.
+6. **At the end of the batch, do a single Rule 4/5 propagation
+   commit** covering procedure manual + accuracy prompt + N5Improvement
+   + AUDIT-COVERAGE. Saves N-1 propagation cycles vs per-fix doc
+   updates.
+7. **Stamp every fix with provenance: native_reviewed_<date>.**
+   Future audits can roll back the batch by provenance if needed.
+
+### F.44.13 Bounded-coverage phrasing for native-teacher batches
+
+When closing this class of batch in audit-coverage docs, use:
+
+- "13 of 13 findings closed for the corpus snapshot scanned;
+  6 of 13 added a JA-NN CI invariant locking the named pattern."
+  — NOT "all native-teacher findings resolved."
+- "JA-150 prevents re-introduction of *the specific vocab-example-
+  kanji-whitelist violation pattern*" — does not catch register
+  drift, unidiomatic phrasing, or other LLM-curation regressions
+  the review didn't have bandwidth to audit.
+- "Pitch-accent entries flagged native_review_pending pending
+  actual native-speaker pass" — does not assert the dictionary
+  values are correct; defers to NATIVE-SPEAKER-RE-VERIFICATION.md
+  path-forward.
+- "Bug-spec verification rejected 0 of 13 candidates this batch"
+  — the review came from a human-curated checklist, not an
+  autonomous audit pipeline, so stale-snapshot artifacts were 0%.
+
+### F.44.14 Same drift-class lineage table for Nx prediction
+
+| Class | First seen | Lesson |
+|---|---|---|
+| Multi-artifact discipline gap (F.44.1) | NTR-001 vocab examples (2026-05-22) | Enumerate all artifacts the predicate should cover; outliers are gating bugs |
+| Half-finished duplicate cleanup (F.44.2) | NTR-002 n5-045 (2026-05-22) | Grep contrast-prose for "duplicate"/"canonical"; complete the cleanup with deprecated flag |
+| Gloss-primary inversion (F.44.3) | NTR-003 かれ/かのじょ (2026-05-22) | Native-speaker check that leading gloss matches modern spoken sense |
+| Pronoun missing register caveat (F.44.4) | NTR-004 あなた (2026-05-22) | Pronouns need usage_note with register restrictions |
+| Section / category mislabel (F.44.5) | NTR-005/006 (2026-05-22) | Cross-tabulate section numbers; spot-check semantic match per item |
+| Etymology-as-mnemonic conflation (F.44.6) | NTR-007 三 (2026-05-22) | Native-speaker pass over kanji mnemonic etymology claims |
+| Defensible-but-deviant pitch-accent (F.44.7) | NTR-008 (2026-05-22) | Annotate native_review_pending, don't auto-correct |
+| Particle-nuance not flagged in Q&A (F.44.8) | NTR-010 q-0226 (2026-05-22) | One-line nuance note in explanation_en |
+| Field-name overclaim (F.44.9) | NTR-011 collocations (2026-05-22) | Rename to reflect actual content |
+| Prescriptive vs colloquial reading (F.44.10) | NTR-012 七 (2026-05-22) | Keep primary; append reading_rule usage note |
+| Counter applied indiscriminately + typo (F.44.11) | NTR-013 (2026-05-22) | Per-item semantic check + typo audit |
+
+For Nx, the meta-audit will surface these classes again with
+different content. The procedure-manual section catalogs the
+patterns so the next round is mechanical rather than reinvented.
+
