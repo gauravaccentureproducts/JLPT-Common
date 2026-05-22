@@ -11784,3 +11784,113 @@ re-litigation.
 | Multi-band metric with single-tier classification (F.44.18 + NTR-FU-002) | listening pacing 2026-05-23 | A continuous metric (pacing mpm) is classified into a single tier ("in_range") when consumers want multiple bands. Fix: expose ideal / strict / lenient bands as parallel fields; keep the single-tier for backward compat; document the methodology decision in _meta. |
 | Field-name overclaim broadened beyond bounded close (F.44.18 + NTR-FU-003) | collocations 2026-05-23 | A field-name fix (NTR-011 rename 12 pronouns) leaves the broader corpus drift. Detection: count entries with the legacy name; if >>fix scope, the close was bounded. Fix: expand the rename to all entries + add JA-NN locking the new name. UI consumers must update in same commit (the NTR-011 close had a silent UI regression for the 12 renamed pronouns). |
 
+### F.44.19 Re-paste triage verification MUST run actual data-inspection (amendment to F.44.17, added 2026-05-23)
+
+**Anti-pattern surfaced by the 2026-05-23 re-re-review.** When
+classifying a re-paste claim as STALE (per F.44.17), the
+verification script's correctness matters as much as the
+classification itself. A bug in the verification script that
+returns empty output ≠ "data already shows the fix"; it ≠
+verification at all.
+
+**N5 instance.** Item #2 of the 2026-05-23 NTR re-paste was
+classified STALE in Part 42 based on:
+  - A python script that loaded `grammar.json` and looked up
+    `n5-045` to check deprecation flags.
+  - The script used `g.get('grammar', g.get('entries', []))` —
+    but the actual top-level key is `patterns`. The lookup
+    returned an empty iteration.
+  - I concluded "STALE — already closed" because the script
+    produced no failure output. Actual failure cause: the loop
+    never ran.
+  - Reviewer's 2026-05-23 re-re-pass against the regenerated
+    review packet caught the issue (n5-045 still in core_n5 list +
+    contrasts.note still self-identifying).
+
+**The discipline tightening.** STALE classifications MUST satisfy
+both conditions:
+  1. **Verification script PRINTS non-empty per-claim output**
+     showing the field state observed. ("found id=n5-045 with
+     deprecated=True, _alias_of=n5-017" — not silence).
+  2. **The output is parseable and matches the expected closure
+     state.** If the script can't find the entry at all, that's
+     a VERIFICATION-FAILED state, not a STALE-CONFIRMED state.
+
+**Fix pattern (mandatory).** Every STALE classification in
+audit-coverage must cite the per-claim verification line from
+the script's output. If the line says "found N=0 matches", that's
+a failed verification — re-write the script. If the line says
+"found id=X with field=Y", THAT is the verification.
+
+**N5 cost of the discipline failure.** One bug (NTR-FU-004)
+filed a session later that should have been caught in Part 42's
+triage. Time cost: ~30 minutes of re-verification. Trust cost:
+the audit-doc's "9 of 13 STALE" claim from Part 42 had one
+false-positive STALE (which we now know was actually PARTIAL —
+the data fix landed but the cleanup discipline didn't propagate
+to n5_core_pattern_ids).
+
+**Operational rule.** When implementing verify-before-fix per
+F.41.4 / F.44.17, the verification script's first dry-run on a
+KNOWN-PRESENT field (sanity check: load grammar.json and find
+n5-001) is mandatory before classifying any claim as STALE.
+
+### F.44.20 Four new follow-up defect sub-classes (added 2026-05-23)
+
+The 2026-05-23 re-re-review surfaced four sub-classes that
+extend Classes B (half-finished cleanup), D (pronoun missing
+register caveat), K (counter applied indiscriminately), and a
+new Class P (ID-immutability vs section-retag divergence):
+
+**Class B sub-class — deprecation lattice complete on entry,
+incomplete on canonical-pattern catalog (NTR-FU-004).**
+NTR-002 set `deprecated: true` + `_alias_of` + `deprecated_reason`
+on n5-045 in grammar.json. Cleanup leaked: n5-045 was still in
+`core_n5` in n5_core_pattern_ids.json + the entry's
+`contrasts[0].note` still self-identified as duplicate (now
+redundant with the deprecation field). Fix: introduce `deprecated`
+bucket in the canonical pattern catalog + JA-153 lock + update
+the entry's contrasts.note to reference the deprecation field
+instead. Extend JA-148 to accept the new bucket. Extend tier-
+checking invariants (JA-34) to exclude deprecated entries from
+the actual-vs-listed comparison.
+
+**Class D sub-class — pronoun-usage-note added; cohort-of-examples
+sweep incomplete (NTR-FU-005).**
+NTR-004 added usage_note to あなた + rewrote example [0] to a
+name+さん alternative. Examples [1] and [2] kept using あなた in
+ways the new usage_note tells learners not to (`あなたは
+がくせいですか。` + `あなたは 何さいですか。`). Fix pattern: when
+authoring a usage_note, sweep ALL examples in the entry; rewrite
+each to either parallel the alternative OR demonstrate the
+narrow legitimate use case the usage_note allows. One example
+showing the legitimate use is pedagogically valuable.
+
+**Class K sub-class — reflexive vs singular pronoun counter
+distinction (NTR-FU-006).**
+NTR-013 added `applies_to: 'noun_of_reference'` to collective
+pronouns (私たち / みなさん). Singular pronouns (私, あなた, etc.)
+kept plain counter (defensible: counting people with 人 is
+valid). But じぶん is REFLEXIVE — not a singular pronoun in the
+same sense; counting "ones-self" isn't meaningful. Fix:
+reflexive pronouns get the same applies_to annotation. Pattern
+for Nx-builders: distinguish reflexive from singular in pronoun
+classification before per-class counter discipline.
+
+**Class P — ID-immutability vs section-retag divergence
+(NTR-FU-007).**
+When NTR-005/006 retagged vocab entries' `section` field, the
+entry IDs (which embed the original section slug — e.g.,
+`n5.vocab.20-tableware-and-cooking.はし-chopsticks` for section
+"19. Tableware") were kept immutable to preserve external
+references (audio_manifest / questions.json / user localStorage).
+The slug-encoded section then diverges from the field-encoded
+section. Without an explicit flag, future audits parse the ID
+for section info and surface a false bug. Fix: add
+`legacy_section_in_id: true` flag + note + provenance to every
+entry where the divergence is intentional; add JA-154 to surface
+any future drift without the flag. ID-immutability + section-
+field-authoritative is the documented policy. Horizontal sweep
+found 1 additional entry (にこにこ) beyond the 2 the reviewer
+flagged — sweep tool surfaced what eyeball-review missed.
+
