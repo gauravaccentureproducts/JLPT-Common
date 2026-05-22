@@ -10166,6 +10166,163 @@ in the same close-out commit" — to the case where the inactivity
 window was years long and the backlog is too large to absorb in
 one commit.
 
+## F.42 Reactive→proactive CI-invariant authoring + type-confusion-in-string-field defect class (added 2026-05-22)
+
+Two related learnings from a meta-audit conversation that surfaced
+coverage gaps the existing 147 invariants weren't designed to catch.
+Generalizes to Nx: CI suites built reactively (one invariant per
+named pattern) leave systematic gaps that only surface when a human
+or LLM-with-verification-discipline reads the actual data and
+compares it against the field's intent.
+
+### F.42.1 The reactive→proactive invariant-authoring pattern
+
+**The anti-pattern.** Every CI invariant gets added AFTER a bug
+surfaced the pattern it now catches. JA-121 exists because PAPER-003
+had fix-history prose. JA-128 exists because DOKKAI-001 had
+`passage_text`. JA-145 exists because DOCS-VOCAB-005 had
+`KnowledgeBank/` prose. **No invariant has ever been written
+proactively for a class of bug not yet seen.**
+
+This means the CI suite catches re-introduction of *specific named
+patterns*, but it does NOT catch first occurrence of an *unnamed*
+pattern. The audit-doc writing discipline (bounded phrasing: "JA-NN
+prevents re-introduction of *these specific patterns*") was set up
+precisely to acknowledge this limit.
+
+**The proactive complement (proposed for Nx).** For every metadata
+field added to a data schema, write a *field-shape invariant in the
+same commit as the schema addition*. Don't wait for a bug to surface
+that the field accepts free text when it should be a path/sentinel/
+enum/hash. Schema-shape invariants are cheap and prevent entire
+classes of drift before the data accumulates.
+
+**Operational rule.** When introducing a new field on Nx data files:
+1. Document the expected value shape in the schema's `_meta` block
+   (e.g., "source_file: a resolvable path OR literal sentinel '(authored
+   in-place)'").
+2. Add the corresponding JA-NN invariant in the same commit.
+3. Run it on the seed data; it must pass before the schema lands.
+4. Subsequent additions to the field must conform.
+
+The cost is one CI invariant per metadata field per Nx (~30-50 fields
+on N5). Pays for itself the first time someone types a date into a
+hash column.
+
+### F.42.2 The type-confusion-in-string-field defect class
+
+**The pattern.** A spreadsheet column or JSON field is *typed* as
+"string" in the schema but is *meant* to hold a specific shape (a
+commit hash, a YYYY-MM-DD date, a file path, a URL, an enum value).
+The schema accepts any string, so type-checkers don't fire. But the
+actual value drifts from the intended shape — often via "muscle
+memory" data entry, autocomplete suggestions, Excel auto-coercion,
+or simple typos that look plausible.
+
+**The N5 proof point.** A 2026-05-22 meta-audit of the bug-tracker
+xlsx found:
+- 99 of 155 Fixed rows had Excel-coerced `datetime.datetime` objects
+  in the "Fix Commit" column (Excel saw a date-shaped value and auto-
+  converted; the column-name says "Fix Commit" but the data type was
+  "date").
+- 51 of 155 had bare date strings (`"2026-05-21"`) in the same column.
+- Only 4 of 155 had actual commit-hash-shaped values.
+
+JA-118 (the existing "every Fixed row has a non-empty Fix Commit
+cell" check) passed all 155 — empty isn't the failure mode. The
+failure mode was *wrong-shape-with-non-empty-content*. JA-146 now
+locks the shape (`hash` OR `<...>`-shaped sentinel).
+
+**Detection patterns** (Nx-builder template):
+
+| Field meant to hold | Detector regex template | Sentinel form when value unknown |
+|---|---|---|
+| Commit hash | `^[a-f0-9]{7,40}(\s+\(\+\s+submodule\s+[a-f0-9]{7,40}\))?$` | `<no-hash-archived; see X>` |
+| File path | `os.path.exists(value)` + relative-to-repo-root check | `<no-path; see X>` or `(authored in-place)` |
+| Date (ISO 8601) | `^\d{4}-\d{2}-\d{2}$` | `<date-unknown>` |
+| Enum | `value in ALLOWED_SET` | `<not-applicable; see X>` |
+| URL | `urlparse(value).scheme in {http, https}` + `.netloc != ""` | `<no-url-on-file>` |
+
+**The canonical-sentinel pattern** (F.41.1) is the right complement:
+when the value genuinely isn't known, store a `<...>`-shaped string
+that the CI invariant accepts as a documented absence. Don't leave
+the field empty (CI false-confidence) and don't fabricate a value
+(audit-trail corruption).
+
+### F.42.3 The doc-state-vs-code-state drift class
+
+**The pattern.** Hand-curated documentation (TASKS.md, roadmap files,
+README counts, feature checklists) drifts silently from the actual
+codebase. No automation enforces the link. When a feature is shipped,
+the maintainer must remember to flip the corresponding `[ ]` to `[x]`.
+
+**The N5 proof point.** SVA-1.1 (footer privacy badge) and SVA-1.4
+(Export Progress button) were both shipped weeks before being noticed
+in a TASKS.md review on 2026-05-22 — they were still `[ ]` despite the
+features being live in production.
+
+**The advisory heuristic** (`tools/audit_tasks_md_against_codebase_*.py`
+on N5; transferable pattern):
+1. For each `- [ ]` item, extract distinctive keywords (backticked
+   tokens, file paths, quoted phrases, CSS-class-shaped tokens).
+2. Grep the codebase (js/, css/, locales/, index.html, README.md, etc.).
+3. Score match strength: HIGH (≥5 hits across ≥2 code files), MEDIUM
+   (≥2 hits with ≥1 code file), LOW (sparse), NONE.
+4. Surface HIGH/MEDIUM candidates as advisory output. NOT a CI gate —
+   false positives expected; human review required.
+
+**Why advisory, not enforcing.** A strict CI rule would require an
+LLM-grade matcher to verify "this feature description matches this
+code surface." Beyond practical reach. The heuristic gets ~70% recall
+at acceptable false-positive rate; the maintainer sweep covers the
+gap. First-run on N5 surfaced 13 candidates from 60 `[ ]` items.
+
+### F.42.4 The verification-discipline-before-fix rule
+
+**Extends F.41.4.** When an autonomous audit pipeline files a bug
+spec, the spec's textual claim must be verified against actual data
+BEFORE applying the proposed fix. Two failure modes:
+
+- **Spec premise is wrong**: actual data state doesn't match the
+  claim (e.g., DOCS-VOCAB-005 claimed broken file-path refs; actual
+  values were explicit prose annotations).
+- **Spec premise is right but proposed fix degrades correctness**:
+  e.g., DOCS-VOCAB-005's proposed `docs/X.md#anchor` pointer would
+  have referenced anchors that don't exist in the methodology doc.
+
+Both failure modes pattern-match on substring scans + naive template
+expansion. Verification is: read the actual file content, compare to
+the spec narrative, surface mismatches to the user with alternatives.
+
+### F.42.5 Bounded-coverage phrasing for gap-closure batches
+
+When closing a coverage gap (rather than a content bug), use:
+- "JA-NN catches *the shape mismatch we surveyed*" — does NOT catch
+  semantically-wrong-but-shape-correct values (a hash that points at
+  the wrong commit, a path that resolves to the wrong file).
+- "The cleanup pass *sentinelized historical drift as documented
+  absence*; future entries lock to the canonical convention." — does
+  NOT retroactively recover the original (lost) commit hashes.
+- "Advisory heuristic surfaces *keyword matches between TASKS.md and
+  named code surfaces*" — does NOT catch features shipped under
+  different keywords or in surfaces not scanned (sw.js, data/*.json,
+  third-party-vendored code, etc.).
+- "Coverage *expanded by 1 invariant in this checkpoint*" — does NOT
+  imply universal corpus correctness.
+
+### F.42.6 Same defect-class lineage (Nx prediction)
+
+| Class | First seen | Lesson |
+|---|---|---|
+| Type-confusion in string field | xlsx Fix Commit col (155 rows, 2026-05-22) | Schema-shape invariants must run on every string field where the *intended* shape is narrower than `Any string` |
+| Reactive→proactive invariant authoring gap | Meta-audit, 2026-05-22 | Author field-shape invariants in the same commit as the schema addition, not after the bug |
+| Doc-state vs code-state drift | TASKS.md SVA-1.1/1.4 (2026-05-22) | Advisory heuristic per `tools/audit_tasks_md_against_codebase_*.py`; supplement with maintainer discipline |
+
+Generalizes F.37.6's "horizontal-deployment-as-part-of-fix-commit" +
+F.41.4's "bug-spec-vs-reality verification" to the case where the
+defect is a meta-property of the CI suite itself (coverage gap)
+rather than a content-quality issue.
+
 ## F.41 Canonical-sentinel pattern + multi-case-bug close-out discipline (added 2026-05-22)
 
 Two related learnings from the DOCS-VOCAB-003 → DOCS-VOCAB-005
