@@ -12283,3 +12283,111 @@ self-terminates before producing noise.
 |---|---|---|
 | Correct-version-cite + stale-content-quote (RECALL-NOT-READ, F.44.27) | reviewer v4 pass 2026-05-24 against N5 v1.16.9 (4 Hindi rationale strings from v1.16.8) | When a reviewer-facing prompt asks for content verification, "echo the version field" is necessary but not sufficient — the version field can be fresh while the rest of the upload is stale (Project-Knowledge cache effect), and even with a fully fresh upload the model may recall content from training or prior conversations. Defense: 3-block preflight (version echo + content-fingerprint echo with STALE-MARKERs + read-not-recalled attestation) + per-finding verbatim-quote + CI invariant locking the prompt's defense markers. The downstream verify-before-fix (F.44.19) still applies as a secondary catch; F.44.27's upstream preflight is the primary catch. |
 
+### F.44.29 REAL-pattern + STALE-entries — F.44.27 sub-pattern refinement (added 2026-05-24)
+
+**The failure mode.** A reviewer (or LLM acting as one) cites
+specific entries that are STALE-against-current (the search
+strings the reviewer names don't exist in live data — they were
+fixed in a prior version), BUT supplies a real underlying
+pattern that the cited entries instantiate. The cited entries
+are no-action; the pattern is real.
+
+This is a refinement of F.44.27, not a replacement. F.44.27
+codified the case where reviewer cites stale + has nothing else
+("ignore-with-rationale"). F.44.29 codifies the case where the
+reviewer cites stale + the pattern is real ("ignore-the-stale-
+entries-but-sweep-the-pattern").
+
+**Worked example (N5 v5 reviewer batch, 2026-05-24).** Reviewer
+shipped a "developer bug-fix instruction prompt":
+
+  - Items 1-4: REPLACE rules for 4 entries with the v1.16.8 broken
+    Hindi rationale strings. **All 4 SEARCH strings were 0-hit
+    in live data** (fixed in v1.16.9 BUG-192..195). STALE per
+    F.44.27.
+  - Item 5: General NORMALIZATION RULE — "Convert `भूखा + चाहना
+    को खाना` shape to natural Hindi SOV." The reviewer named 2
+    entry shapes (`भूखा + चाहना को खाना` / `भूखा → चाहना को खाना`).
+    Horizontal sweep on the distinguishing substring `चाहना को`
+    against live data found **3 hits** (the 2 named entries PLUS
+    `चाहना को आराम` in a 3rd entry the reviewer didn't name).
+    Sweep on a related shape `का क्रिया` found a 4th muddled
+    entry.
+
+  Total: reviewer named n=2 → swept-found n+k=4. Same multiplier
+  pattern as v4 listening cycle (n=1 → 18).
+
+**The discipline (codified):**
+
+1. **Triage each cited entry individually per F.44.19** (verify-
+   before-fix with PRINT non-empty per-claim output). Classify
+   STALE / REAL / PARTIAL / REJECT.
+2. **If ANY cited entry is REAL, the pattern is suspect.** Even
+   if only 1 of N cited entries is real, the underlying pattern
+   may exist elsewhere.
+3. **Horizontal sweep the pattern.** Identify the distinguishing
+   substring(s); grep across live data; collect all hits.
+4. **Fix all hits with consistent style.** Use the surrounding
+   project's established rationale_hi (or analogous) convention.
+5. **Lock the marker via CI invariant extension.** Add the
+   distinguishing substring to the relevant JA-NN word-salad /
+   content-discipline invariant's marker set. Tight marker
+   (avoid false positives on legitimate constructions).
+6. **Document the cited-but-stale entries explicitly as STALE**
+   in the close-out doc. The reviewer's report deserves full
+   triage even when most items are STALE.
+
+**Defense layering rule:**
+
+- Upstream defense: 3-block BINDING preflight from F.44.27
+  (version-echo + content-fingerprint with STALE-MARKERs +
+  read-not-recalled attestation). Catches pure-recall reviewers
+  before findings.
+- Downstream defense: F.44.19 verify-before-fix with PRINT
+  non-empty per-claim output. Catches stale entries that pass
+  preflight (e.g., reviewer cites a stale entry inside a real-
+  pattern claim).
+- Lock defense: JA-NN substring extension (or new JA-NN if
+  pattern doesn't fit an existing invariant). Locks the surfaced
+  pattern against re-introduction.
+
+Both upstream AND downstream defenses are required. Single-layer
+defenses always have escape valves. F.44.27 alone misses v5-shape
+patterns (reviewer passes preflight then writes findings against
+stale entries inside real-pattern claims); F.44.19 alone misses
+v4-shape patterns (reviewer writes pure-recall findings the
+maintainer must reverse-engineer to triage). The combination
+catches both shapes.
+
+**Marker-extension policy (sub-rule).** When extending an
+existing JA-NN word-salad marker set:
+
+- Choose the **shortest distinguishing substring** that uniquely
+  identifies the broken shape. Longer substrings (full broken
+  phrases) miss minor variations; shorter substrings risk false
+  positives.
+- Sanity-check against the entire current corpus: the new marker
+  must catch the broken entries AND zero legitimate constructions.
+- Document the marker's first-seen entry-id in the JA-NN function
+  docstring (for future archaeology).
+- Update the matching A-NN audit prompt entry to mention the
+  extension.
+
+**Bounded coverage.**
+
+- "Horizontal sweep multiplier n → n+k" — empirically observed
+  in 2 cycles (v4 listening n=1→18; v5 word-salad n=2→4). Does
+  NOT guarantee the multiplier holds on every future cycle.
+- "Marker extension catches re-introduction" — locks the
+  documented shapes; does NOT catch novel shapes that don't
+  match any existing marker.
+- "REAL-pattern + STALE-entries sub-pattern documented" —
+  captures one observed variant; future RECALL-NOT-READ
+  variants will surface new sub-classes.
+
+### F.44.30 Same drift-class lineage table extension for REAL-pattern + STALE-entries
+
+| Class | First seen | Lesson |
+|---|---|---|
+| REAL-pattern + STALE-entries (F.44.29, F.44.27 sub-pattern) | reviewer v5 pass 2026-05-24 against N5 v1.16.10 (4 stale REPLACE rules + 1 real NORMALIZATION RULE → 4 fixed entries via 2 named + 2 swept) | When a reviewer cites stale entries inside a real-pattern claim, the cited-stale entries are no-action (F.44.27 STALE classification) BUT the underlying pattern is real and requires horizontal sweep. Triage each cited entry individually via F.44.19; if any are REAL, sweep the pattern; lock the surfaced markers via JA-NN extension. Defense layering: upstream preflight (F.44.27) + downstream verify-before-fix (F.44.19) + marker lock (JA-NN extension) — all 3 required, single-layer defenses have escape valves. Horizontal-sweep multiplier n → n+k empirically holds across cycles. |
+
