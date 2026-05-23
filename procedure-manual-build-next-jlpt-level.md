@@ -12083,3 +12083,89 @@ not as a redundant CI check.
 |---|---|---|
 | CI-invariant re-paste of existing-but-distributed predicate (F.44.23) | BUG-1 vocab-whitelist 2026-05-23 | When asked to "add" an invariant for a regression already locked by JA-NN, verify the existing coverage + decline the redundant add + document the existing coverage in the audit log |
 
+### F.44.25 Review-packet staleness — regen-after-data-change discipline (added 2026-05-23)
+
+**Anti-pattern.** A project ships a "review packet" — a compact
+content snapshot for external review (e.g., uploaded to a Claude
+Project Knowledge or one-shot chat). The packet is typically
+gitignored (generated locally, not committed) because (a) it's
+derived data, (b) it may contain stripped-or-anonymized variants
+of the canonical files. When the author bumps the data version
+and commits changes BUT forgets to regenerate the packet before
+sharing, the reviewer reviews against stale content and surfaces
+"bugs" that are already fixed in the working tree.
+
+**The failure mode is self-replicating.** When the reviewer's
+stale-snapshot finding gets re-pasted into a new session, the
+new session has to:
+  1. Run F.44.17 STALE/REAL/PARTIAL/REJECT triage
+  2. Discover that ~half the findings are already-closed
+  3. Either re-litigate (waste of context) or document the
+     stale-snapshot rejection (overhead in audit logs)
+
+The cleanest fix is preventing the stale share in the first
+place. **The CI invariant (JA-156) is the load-bearing lock;
+the discipline doc below is the soft procedural reminder.**
+
+**N5 instance (2026-05-23).** Session shipped v1.16.0 → v1.16.4
+across 4 minor version bumps + 18+ commits. The author explicitly
+regenerated the packet exactly ONCE (at v1.16.2, after the user
+asked "can I pass it for review?"). Between v1.16.2 and v1.16.4,
+two version-bumping data commits happened with no packet regen:
+v1.16.3 (4 follow-up bug fixes + JA-153/154) and v1.16.4 (3
+pitch-accent audit blocks). Reviewer asked "have you updated
+review packet? because the review is based on it" — verification
+confirmed the packet was happen-to-be-current via a side-effect
+of one of the build tools, but the author had NOT explicitly
+regenerated it. Codification: JA-156 + this F.44.25 entry.
+
+**Discipline (binding):**
+
+1. **JA-156 CI invariant** (`tools/check_content_integrity.py`):
+   when the gitignored `data/_review_packet/` directory exists
+   locally, its `version.json.version` field must match
+   `data/version.json.version`. Skip-on-absent — the check is
+   local-only (catches the pre-share author mistake).
+
+2. **Commit-time checklist extension.** After every commit that
+   bumps `data/version.json.version` (or touches any
+   `data/*.json` file at all), the author MUST run:
+   ```
+   python tools/build_review_packet.py
+   ```
+   before sharing the packet with any external reviewer. The
+   regen takes <2 seconds; the cost of skipping it is one full
+   re-paste-triage cycle in the next session.
+
+3. **Pre-share verification.** Before answering "is the review
+   packet ready to share?" with "yes," the maintainer MUST run
+   the full CI check or explicitly invoke JA-156:
+   ```
+   python tools/check_content_integrity.py 2>&1 | grep JA-156
+   ```
+   If it FAILs, regenerate before answering.
+
+4. **Gitignored-artifact discipline pattern (generalizable).**
+   Any gitignored generated artifact that's shared externally
+   needs a freshness CI invariant of this shape:
+     - Compare a version/timestamp field in the artifact to the
+       canonical source.
+     - Skip-on-absent so remote CI doesn't break.
+     - Failure message names the regen command + the discipline
+       doc.
+
+**Bounded-coverage phrasing.**
+  - "JA-156 catches *packet-version-vs-live-data-version
+    mismatch when the packet exists locally*" — does NOT catch
+    content drift inside the packet (would require deep diff);
+    only catches the version-stamp mismatch.
+  - "Skip-on-absent guarantees remote CI doesn't break" — does
+    NOT mean remote CI is enforcing the freshness; only local CI
+    enforces.
+
+### F.44.26 Same drift-class lineage table extension for gitignored-artifact freshness
+
+| Class | First seen | Lesson |
+|---|---|---|
+| Gitignored-shared-artifact freshness (F.44.25) | review packet 2026-05-23 | When a gitignored generated artifact is shared externally (review packet, generated docs, exports), add a CI invariant comparing the artifact's version field to the canonical source. Skip-on-absent for remote CI; load-bearing locally. The artifact-vs-source version mismatch is the failure mode; CI is the lock. |
+
