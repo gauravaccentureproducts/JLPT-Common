@@ -11989,3 +11989,97 @@ dictionary + audio recordings. Claude declined and instead:
 |---|---|---|
 | LLM-circular-authority on native-intuition claims (F.44.21) | pitch-accent 2026-05-23 | When asked to verify what only a native speaker can verify, scaffold the audit block + decline the verification; CI lock + queue file + protocol doc make the human's work mechanical |
 
+### F.44.23 CI-invariant re-paste discipline — verify-before-add (added 2026-05-23)
+
+**Anti-pattern.** A reviewer or audit-pipeline re-paste asks for a CI
+invariant to be "added" to prevent some regression. Without
+verification, the temptation is to add the invariant. But the
+invariant may already exist (possibly under a different ID or
+distributed across multiple existing JA-NNs). Adding the
+redundant invariant violates "Reuse Over Recreate," adds
+maintenance surface, and slows CI for zero detection value.
+
+**The mistake to avoid.** "Just add it; codified is better than
+not-codified." This sets a precedent where every re-paste of
+the same finding produces a new invariant, eventually creating
+N invariants that all enforce the same predicate. CI gets
+slower; nothing more is caught.
+
+**The honest pattern.** Before adding any CI invariant:
+
+  1. **Run the EXACT predicate against the current corpus.**
+     Print non-empty per-corpus output showing the violation
+     count (mandatory per F.44.19 verify-before-classify
+     discipline). If the corpus is clean against the predicate,
+     either an invariant already enforces it OR the corpus is
+     incidentally clean (no enforcement).
+  2. **Search check_content_integrity.py (or equivalent) for
+     existing invariants** that name the same predicate. Use
+     grep against `whitelist`, `kanji`, the relevant field
+     names, etc.
+  3. **Read the existing invariants' implementations** to
+     confirm the predicate is enforced — not just named.
+  4. **Triage per F.44.17:**
+     - **STALE** — predicate already enforced under existing
+       JA-NN(s). Document the existing coverage + decline the
+       redundant add. Do NOT add a "pointer" or "consolidation"
+       invariant just for symbolic value; it adds CI surface
+       without detection value.
+     - **REAL** — predicate is not enforced; add the new
+       invariant.
+     - **PARTIAL** — predicate is enforced for some scope but
+       not others; either extend the existing invariant or
+       add a complementary one with explicit scope boundaries.
+
+**N5 instance (2026-05-23).** Reviewer asked to "add a CI
+invariant that prevents future vocab examples from re-introducing
+the kanji-whitelist regression that v1.16.2 just cleaned up"
+plus extend to grammar / reading / listening. Verification
+showed:
+  - **JA-150** (added 2026-05-22 NTR-001 close) already enforces
+    the EXACT predicate (whitelist ∪ exception) on vocab.json
+    examples.
+  - **JA-13** enforces a STRICTER predicate (whitelist only)
+    across grammar/questions/reading/listening — same coverage
+    the task asks for, with a tighter rule.
+  - **JA-28** enforces the union for dokkai-paper context
+    specifically.
+  - Live state: 0 violations across all 4 corpora.
+
+Triaged as STALE. No new invariant added. This F.44.23 entry
+documents the decision so future sessions don't re-litigate
+the same pattern.
+
+**The "symbolic consolidation invariant" temptation.** When a
+reviewer wants ONE named invariant they can point at, a
+maintainer may be tempted to add a redundant JA-NN whose
+purpose is documentary, not detective. Resist this:
+  - The documentation belongs in the procedure manual or audit
+    log, not in CI.
+  - CI surface is a maintenance liability; every invariant adds
+    test runtime + drift risk.
+  - Future maintainers reading the redundant invariant may
+    "improve" it independently from its parent, creating
+    silent divergence.
+
+If a future reviewer asks "what's the load-bearing invariant
+for X?", the answer goes in the audit log + procedure manual,
+not as a redundant CI check.
+
+**Bounded-coverage phrasing for STALE-classified invariant requests.**
+  - "Predicate already enforced by JA-X (added YYYY-MM-DD,
+    BUG-NNN close); live state 0 violations" — does NOT assert
+    the predicate is bulletproof; only that it's gated.
+  - "Distributed across N existing invariants" — does NOT
+    consolidate them into one; the distribution is intentional
+    (different scopes / different sources of truth).
+  - "Adding a consolidation pointer would be redundant; the
+    documentation belongs in the audit log" — bounds the
+    decision rationale.
+
+### F.44.24 Same drift-class lineage table extension for CI-invariant-re-paste discipline
+
+| Class | First seen | Lesson |
+|---|---|---|
+| CI-invariant re-paste of existing-but-distributed predicate (F.44.23) | BUG-1 vocab-whitelist 2026-05-23 | When asked to "add" an invariant for a regression already locked by JA-NN, verify the existing coverage + decline the redundant add + document the existing coverage in the audit log |
+
