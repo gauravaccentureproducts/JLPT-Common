@@ -12169,3 +12169,117 @@ regenerated it. Codification: JA-156 + this F.44.25 entry.
 |---|---|---|
 | Gitignored-shared-artifact freshness (F.44.25) | review packet 2026-05-23 | When a gitignored generated artifact is shared externally (review packet, generated docs, exports), add a CI invariant comparing the artifact's version field to the canonical source. Skip-on-absent for remote CI; load-bearing locally. The artifact-vs-source version mismatch is the failure mode; CI is the lock. |
 
+### F.44.27 RECALL-NOT-READ — correct-version-cite + stale-content-quote (added 2026-05-24)
+
+**The failure mode.** A reviewer (or LLM acting as one) opens the
+review packet, faithfully copies `version.json.version` into the
+report header (correct value, no drift), then writes findings that
+quote field values that **do not exist in the packet** at that
+version — they exist in an earlier version that has since been
+fixed. The version cite checks out; the content cite does not.
+
+This is **not** the same as the F.44.17 stale-snapshot pattern
+(reviewer cites an old version + content from that old version —
+internally consistent, just out-of-date). RECALL-NOT-READ is
+internally inconsistent: the version says vN but the content is
+from vN-1. Three plausible mechanisms:
+
+1. **Project-Knowledge cache effect** — reviewer uploaded a fresh
+   `version.json` (top of the packet, small file) but the larger
+   paper files in the Project Knowledge are still from a prior
+   upload. The reviewer sees vN in version.json but the paper
+   files are vN-1.
+2. **Conversation-history recall** — reviewer participated in a
+   prior session against vN-1 and the conversation turn-history
+   contains the broken strings. When asked to review vN, the
+   model surfaces remembered strings instead of re-reading.
+3. **Training-data leakage** — for strings that were public for
+   a non-trivial window before being fixed, the model may surface
+   them from pretraining instead of from the upload.
+
+The maintainer's defense against ALL three is identical: force
+the reviewer to **re-read the packet** at review time, and provide
+upstream signals that catch a stale read.
+
+**The 3-block BINDING preflight defense pattern.** When designing
+the reviewer-facing prompt for an Nx-level packet:
+
+1. **Preflight 1 — version-field echo.** Reviewer pastes
+   `version.json.version` + `cacheVersion` + `builtAt` verbatim
+   at the top of the report. Standard anchor.
+2. **Preflight 2 — content-fingerprint echo with explicit
+   STALE-MARKERS.** For each known-fixed-from-prior-version
+   string, list the string in the prompt with a "STOP + re-pull"
+   instruction if it appears in the reviewer's quote. Example:
+       > 3. `papers/dokkai.json`, question id `dokkai-2.5`,
+       > `rationale_hi` first 60 chars = `<paste>`
+       > - **STALE-MARKER:** if your quote contains
+       >   `माता काम करता है में अस्पताल`, the dokkai paper file
+       >   in your upload is v1.16.8. **STOP. Re-pull. Do not
+       >   write findings.**
+   The stale-marker self-tests the upload: if the reviewer can
+   echo back the FIXED string, the upload is current; if they
+   echo a marker, the upload is stale and the report self-
+   terminates before findings.
+3. **Preflight 3 — read-not-recalled attestation.** Reviewer
+   pastes a verbatim statement that every quoted string was
+   read at review time, not recalled from prior sessions /
+   training / memory. Pasting an attestation is a low-cost
+   gate against high-cost downstream noise.
+
+**Per-finding amplification.** Even with the 3-block preflight,
+the reviewer might pass preflight then write 10 findings from
+memory. Defense: per-finding `Read-not-recalled: [x]` checkbox
++ `Observed:` field must be verbatim copy-paste (no paraphrase,
+no translation-from-memory). Re-read per finding.
+
+**CI invariant lock.** Add a `JA-NN` substring-presence check on
+the reviewer prompt: the preflight section headers + the
+STALE-MARKER strings + the read-not-recalled checkbox + the
+no-paraphrase / no-translation-from-memory rules + the
+`RECALL-NOT-READ` triage label must all be present. This locks
+the prompt against accidental future edits that drop the
+defenses. (For N5 this is JA-161, added 2026-05-24.)
+
+**Stale-marker maintenance discipline.** Each time the maintainer
+fixes a stale-marker-class defect (rationale text correction,
+field-rename, etc.), append the OLD value as a new STALE-MARKER
+entry in the prompt. Over time the STALE-MARKER list grows; that's
+intentional — every entry catches one more class of stale upload.
+Prune entries only when (a) the old text is so far in the past
+that no live cache could still contain it AND (b) keeping it
+would meaningfully increase prompt size. The break-even point is
+empirical; default to keeping markers.
+
+**Why this is distinct from F.44.17.** F.44.17 was about
+"the reviewer is internally consistent but out-of-date — verify
+findings against current state per F.44.19". F.44.27 is about
+"the reviewer is internally INconsistent — the version cite is
+fine but the content quotes are from a prior state". F.44.17's
+verify-before-fix still catches RECALL-NOT-READ artifacts
+(content checked against current data shows the strings as
+already-fixed), but F.44.17 is a downstream defense. F.44.27
+adds upstream defenses (the 3-block preflight) so the reviewer
+self-terminates before producing noise.
+
+**Bounded coverage.**
+
+- "The 3-block preflight catches RECALL-NOT-READ" — does NOT
+  guarantee it catches every future stale-anchor variant. New
+  mechanisms will surface; extend the defense.
+- "STALE-MARKER list grows over time" — does NOT mean every
+  past defect must have a marker. Use judgment: only strings
+  that are uniquely identifying + likely to leak via cache /
+  recall warrant a marker.
+- "Per-finding read-not-recalled checkbox is BINDING" —
+  enforcement is by maintainer-triage convention (reports
+  without the checkbox are rejected). CI cannot verify the
+  reviewer actually re-read; the checkbox is a discipline
+  signal, not a proof.
+
+### F.44.28 Same drift-class lineage table extension for RECALL-NOT-READ
+
+| Class | First seen | Lesson |
+|---|---|---|
+| Correct-version-cite + stale-content-quote (RECALL-NOT-READ, F.44.27) | reviewer v4 pass 2026-05-24 against N5 v1.16.9 (4 Hindi rationale strings from v1.16.8) | When a reviewer-facing prompt asks for content verification, "echo the version field" is necessary but not sufficient — the version field can be fresh while the rest of the upload is stale (Project-Knowledge cache effect), and even with a fully fresh upload the model may recall content from training or prior conversations. Defense: 3-block preflight (version echo + content-fingerprint echo with STALE-MARKERs + read-not-recalled attestation) + per-finding verbatim-quote + CI invariant locking the prompt's defense markers. The downstream verify-before-fix (F.44.19) still applies as a secondary catch; F.44.27's upstream preflight is the primary catch. |
+
