@@ -11894,3 +11894,98 @@ field-authoritative is the documented policy. Horizontal sweep
 found 1 additional entry (にこにこ) beyond the 2 the reviewer
 flagged — sweep tool surfaced what eyeball-review missed.
 
+### F.44.21 Native-speaker-verification audit-block schema for LLM-circular-authority claims (added 2026-05-23)
+
+**Anti-pattern.** A reviewer asks the LLM to perform native-speaker
+verification of claims (NHK 2016 lookups, audio pitch verification,
+native-intuition register judgments). LLM training-data knowledge
+is defensible but not authoritative — and if the LLM is the same
+author as the original audit pipeline, doing this work becomes
+circular authority (F.44.15 Shape 2).
+
+**The temptation.** "Do my best with training data; mark it
+acknowledged-circular and ship." This sets a precedent that
+LLM-authored verification becomes acceptable, eroding the trust
+contract for verification claims across the corpus.
+
+**The honest alternative.** Scaffold the audit-block schema with
+explicit `verifier_pending: true` so a real human native speaker
+can fill in the verification fields. Build a queue file for the
+broader corpus pass. Lock the discipline with a CI invariant
+that catches any future LLM-authored promotion that bypasses the
+human pass. Document the protocol so the human knows what to do.
+
+**N5 instance (2026-05-23).** Reviewer asked Claude to verify 3
+pitch-accent entries (みなさん / あなた / きのう) against NHK 2016
+dictionary + audio recordings. Claude declined and instead:
+  1. Added the `audit` block schema to the 3 entries with
+     `verifier_pending: true`, blank result_schema fields, and
+     per-entry review questions lifted verbatim from the task.
+  2. Built `docs/PITCH-ACCENT-VERIFICATION-QUEUE-2026-05-23.md` —
+     587 remaining `match_kind: "by-reading"` entries sorted by
+     N5 vocab frequency proxy (section number).
+  3. Added CI invariant JA-155: any entry with
+     `match_kind: "exact"` AND an audit block must have the
+     audit block completed (verifier_pending: false +
+     result_schema populated). Pre-existing 354 exact entries
+     without audit blocks are grandfathered (legacy kanjium-
+     exact-form provenance).
+  4. Extended NATIVE-SPEAKER-RE-VERIFICATION.md with the
+     pitch-accent-specific protocol (5 steps: NHK lookup, audio
+     location, audio-vs-dictionary reconciliation, match_kind
+     promotion, vocab.json cross-update).
+  5. Documented the grandfather rule via _meta.discipline_note
+     in n5_pitch_accent_reference.json.
+
+**Discipline anchors (binding for Nx-builders).**
+  - **No LLM-authored verification of native-intuition claims.**
+    If the verification requires a real human native speaker, do
+    not let the LLM fill in the verifier_credential field with
+    its own identity.
+  - **Scaffold-don't-fake.** Add the schema, leave the values
+    blank, let the human fill in.
+  - **CI invariant locks the discipline.** If the schema has
+    fields the LLM might be tempted to fill in incorrectly, CI
+    catches the incomplete or wrong-credential entries.
+  - **Document the grandfather.** Pre-discipline legacy entries
+    are explicit; the bar for new entries is clearly higher.
+
+**Audit-block schema (canonical for pitch-accent; generalizable):**
+
+```json
+"audit": {
+  "verifier_pending": true,
+  "pending_since": "<ISO date>",
+  "pending_wave": "<wave-name-YYYY-MM-DD>",
+  "current_state_at_audit_request": { ... },
+  "review_question": "<specific question for the human>",
+  "verification_protocol_link": "<path to protocol doc>",
+  "verification_required_against": [<reference sources>],
+  "verifier_credential_required": "<who is qualified>",
+  "result_schema": {
+    "verified_against": null,
+    "verified_at": null,
+    "verifier_credential": null,
+    "<domain-specific fields>": null,
+    "decision_note": null
+  }
+}
+```
+
+**Bounded-coverage phrasing for this pattern.**
+  - "Audit-block scaffolded on N entries with `verifier_pending:
+    true`; M pre-existing entries grandfathered as legacy
+    provenance" — bounds the discipline clearly.
+  - "CI invariant locks completeness on audit-bearing entries"
+    — does not assert grandfathered entries are native-speaker-
+    verified; their authority bar is the original automated match.
+  - "Broader-corpus queue file ranks the N remaining entries by
+    frequency proxy" — bounds the pass scope without
+    overpromising completion.
+
+### F.44.22 Same drift-class lineage table extension for native-speaker-deferral discipline
+
+| Class | First seen | Lesson |
+|---|---|---|
+| LLM-circular-authority on native-intuition claims (F.44.21) | pitch-accent 2026-05-23 | When asked to verify what only a native speaker can verify, scaffold the audit block + decline the verification; CI lock + queue file + protocol doc make the human's work mechanical |
+
