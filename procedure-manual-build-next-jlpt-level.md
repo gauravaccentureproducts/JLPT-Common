@@ -12593,3 +12593,59 @@ existing JA-NN word-salad marker set:
 |---|---|---|
 | REAL-pattern + STALE-entries (F.44.29, F.44.27 sub-pattern) | reviewer v5 pass 2026-05-24 against N5 v1.16.10 (4 stale REPLACE rules + 1 real NORMALIZATION RULE → 4 fixed entries via 2 named + 2 swept) | When a reviewer cites stale entries inside a real-pattern claim, the cited-stale entries are no-action (F.44.27 STALE classification) BUT the underlying pattern is real and requires horizontal sweep. Triage each cited entry individually via F.44.19; if any are REAL, sweep the pattern; lock the surfaced markers via JA-NN extension. Defense layering: upstream preflight (F.44.27) + downstream verify-before-fix (F.44.19) + marker lock (JA-NN extension) — all 3 required, single-layer defenses have escape valves. Horizontal-sweep multiplier n → n+k empirically holds across cycles. |
 
+### F.44.31 Audit-cluster fix pass — norm-definition + category-whitelist + dedup-with-backfill discipline (added 2026-05-24)
+
+**Context.** N5 received an audit (Claude_audit_2026-05-24) surfacing 8 bug clusters (BUG-A..H) — duplicate common_mistakes rows by aggressive norm, dup-example rows, wrong==right (under strip-only) rows, contradictions between common_mistakes and wrong_corrected_pair, short why fields, oversized meaning_ja fields, a category rename, and an xlsx process change. Fixing the 8 clusters surfaced 3 generalizable discipline gaps.
+
+**The 3 discipline gaps and their codifications:**
+
+**1. Norm-definition awareness per audit class.** The same audit dataset can produce different counts depending on the norm function chosen. The N5 audit-cluster norm `re.sub(r'[、。「」？！\s]', '', s or '')` strips spaces AND Japanese punctuation; a BUG-H-shape audit using `.strip()`-only equality counts fewer rows. When the dedup-norm is stricter than the wrong-vs-right norm, rewriting a row to differ only by spacing/punctuation will pass the wrong-vs-right check but still fail dedup. Lesson: pick rewrite content that differs in SUBSTANTIVE ways (different particle, different conjugation, different lexeme) — not just spacing or punctuation — so the rewritten row survives BOTH norms.
+
+   - **Audit-class norm table** (document this explicitly per-cluster in the next audit pass):
+     - `dedup_norm(s) = re.sub(r'[、。「」？！\s]', '', s or '')` — strips internal punctuation; used for "is this row a duplicate of another row".
+     - `strip_norm(s) = s.strip()` — leading/trailing whitespace only; used for "does wrong actually differ from right".
+     - When the two diverge, choose rewrite content where dedup_norm(wrong) ≠ dedup_norm(right) AND strip_norm(wrong) ≠ strip_norm(right).
+   - **Discipline check:** when authoring rewrites for one class, sanity-check the rewrites against the OTHER classes' norms before saving. The fix pass should not introduce new violations under stricter classifiers.
+
+**2. Category-whitelist propagation across array boundaries.** When code paths add cm entries via cross-array promotion (e.g., promoting a wrong_corrected_pair entry up into the common_mistakes array as a JA-51 backfill), the source array's vocabulary for category fields may NOT match the destination array's whitelist. N5's wrong_corrected_pair uses `error_category` with values like `lexicon`, `pragmatic`, `word_order`, `morphology` — none of which are in the JA-51 valid set `{particle, verb_class, conjugation, register}`. Naive promotion produces 24+ invariant violations.
+
+   - **The discipline (codified):**
+     1. Whenever a promotion / backfill / cross-array copy path is introduced, audit ALL fields whose validity is governed by a CI invariant.
+     2. Implement a CATEGORY_MAP (or analogous mapper) at the promotion boundary. Map source vocabulary → destination whitelist. Default unknowns to the broadest valid category (typically `register` for "miscellaneous learner errors").
+     3. Add a JA-NN invariant that catches the SHAPE of this gap: e.g., "every cm row whose source field is `promoted from wrong_corrected_pair` has category in JA-51 whitelist". (Optional but recommended.)
+   - **N5 reference mapping** (for reuse on subsequent levels):
+     - `lexicon → register` (vocabulary / word choice — broadest miscellaneous)
+     - `word_order → register` (sentence structure convention)
+     - `pragmatic → register` (speech-act convention)
+     - `morphology → conjugation` (word-form construction)
+     - `punctuation → register` (writing convention)
+     - `counter → particle` (counters group with particle behavior)
+     - everything else → register
+
+**3. Dedup-with-backfill discipline (preserve high-floor invariants).** When a dedup pass drops rows from a column with a "≥N entries per row" CI invariant (N5 has JA-51 requiring ≥3 categorized common_mistakes), the dedup pass MUST be paired with a backfill pass that promotes non-duplicate entries from an adjacent array (e.g., wrong_corrected_pair → common_mistakes) to restore the floor. Naive dedup-only drops 41 patterns below the JA-51 floor.
+
+   - **The discipline (codified):**
+     1. Before authoring a dedup pass, enumerate every CI invariant of the form "≥N per row" on the column being deduped.
+     2. Identify the SOURCE for backfill: which adjacent array can supply non-duplicate entries? For N5's common_mistakes, wrong_corrected_pair is the natural source.
+     3. Implement dedup + backfill as a single atomic pass. Order: dedup first → identify deficit → promote candidates (filtered against existing keys to avoid re-introducing duplicates) → write back.
+     4. Tag all backfilled rows with `provenance="auto_fix_YYYY_MM_DD"` + `audit_wave="..."` + `source="promoted from <source-array>"` for forensic traceability.
+     5. If the backfill source is also exhausted, fall back to a hand-authored template (N5 uses a punctuation-omission template that works for most patterns).
+   - **Sidecar logging requirement:** every drop AND every backfill MUST be logged to `data/<corpus>.fix_log.json` with the dropped/added row content, the kept/source reference, and the reason. Sidecar files are forensic — git diff is insufficient because it doesn't show INTENT.
+
+**Cross-cutting discipline (applies to all 3 gaps):**
+
+- **Provenance + audit_wave fields on every mutated row.** N5's audit-cluster fix tags every mutated row with `provenance="auto_fix_2026_05_24"` + `audit_wave="claude_audit_2026_05_24"`. This makes the fix pass auditable downstream — a future native-teacher pass can filter to just claude-authored rows.
+- **Side-by-side fix-log sidecar.** A `data/<corpus>.fix_log.json` sidecar with `_meta` + per-bug-cluster sections (drops, changes, backfills) — keyed by cluster id (BUG-A..H). Re-runnable; idempotent; gitted.
+
+**Bounded coverage.**
+
+- "CATEGORY_MAP catches all whitelist mismatches" — locks the documented mismatch classes; does NOT catch novel category values introduced in future arrays. Re-audit the source array's category vocabulary before each cross-array promotion path.
+- "Dedup-with-backfill preserves JA-51" — empirically verified for N5's JA-51 floor of ≥3 categorized cm; does NOT generalize automatically to higher floors (e.g., ≥5) without adjusting the backfill quota.
+- "wcp → cm promotion preserves teaching quality" — N5's wcp entries are already curated learner errors, so promotion is safe; other corpora may have wcp entries with placeholder content that should be filtered out before promotion.
+
+### F.44.32 Same drift-class lineage table extension for audit-cluster discipline
+
+| Class | First seen | Lesson |
+|---|---|---|
+| audit-cluster fix (F.44.31, norm + whitelist + dedup-backfill) | Claude_audit_2026-05-24 cluster sweep against N5 v1.16.12 (8 clusters BUG-A..H — 52 dedup drops, 47 backfills, 14 example drops, 7 rewrites, 4 category renames, 4 meaning_ja splits, 2 contradictions resolved, 3 short-why expansions, +3 xlsx columns) | When fixing a batch of audit-surfaced bugs that involves dedup + rewrite + backfill, lock 3 disciplines: (1) audit-class norm awareness — rewrite content must survive BOTH the stricter dedup-norm AND the lenient wrong-vs-right strip-norm, requiring substantive differences not just spacing/punctuation; (2) category-whitelist propagation — when promoting entries across arrays (wcp → cm), map source-array category vocabulary through a CATEGORY_MAP to the destination's CI-invariant whitelist; (3) dedup-with-backfill atomicity — when dedup drops rows from a column with a "≥N per row" invariant, pair with an in-pass backfill from an adjacent array (filter against existing keys), with hand-authored template fallback. All mutated rows carry provenance + audit_wave tags; all drops/changes/backfills log to a fix_log.json sidecar. |
+
