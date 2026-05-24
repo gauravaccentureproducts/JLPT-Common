@@ -12649,3 +12649,70 @@ existing JA-NN word-salad marker set:
 |---|---|---|
 | audit-cluster fix (F.44.31, norm + whitelist + dedup-backfill) | Claude_audit_2026-05-24 cluster sweep against N5 v1.16.12 (8 clusters BUG-A..H — 52 dedup drops, 47 backfills, 14 example drops, 7 rewrites, 4 category renames, 4 meaning_ja splits, 2 contradictions resolved, 3 short-why expansions, +3 xlsx columns) | When fixing a batch of audit-surfaced bugs that involves dedup + rewrite + backfill, lock 3 disciplines: (1) audit-class norm awareness — rewrite content must survive BOTH the stricter dedup-norm AND the lenient wrong-vs-right strip-norm, requiring substantive differences not just spacing/punctuation; (2) category-whitelist propagation — when promoting entries across arrays (wcp → cm), map source-array category vocabulary through a CATEGORY_MAP to the destination's CI-invariant whitelist; (3) dedup-with-backfill atomicity — when dedup drops rows from a column with a "≥N per row" invariant, pair with an in-pass backfill from an adjacent array (filter against existing keys), with hand-authored template fallback. All mutated rows carry provenance + audit_wave tags; all drops/changes/backfills log to a fix_log.json sidecar. |
 
+### F.44.33 Metric-gaming anti-pattern in audit-driven fix passes (added 2026-05-24)
+
+**Context.** Post-BUG-A..H, a second-round reviewer audit (independent
+re-audit against N5 v1.16.12) called out that the BUG-K wcp.why
+expansion was metric-gaming: a fix-pass added boilerplate suffixes to
+25 crisp one-liner rationales to satisfy a ≥6 whitespace-token floor in
+the audit predicate, damaging pedagogical quality. The originals were
+complete; the expansions added tautology + empty generality + broken
+self-reference.
+
+**The anti-pattern (codified):**
+
+When an audit predicate enforces a quantitative floor (token count,
+char length, item count) on a quality dimension, a fix-pass optimizing
+the metric instead of the quality can DAMAGE the corpus while
+satisfying the predicate. Concrete shapes:
+
+| Anti-pattern | Symptom | Why it slipped past review |
+|---|---|---|
+| Token-count floor on `why` rationales | Crisp 5-token explanations padded to 12 tokens with filler | Audit metric green; pedagogical quality red. The author optimized for the visible metric. |
+| Length floor on `meaning_ja` | Short clean meanings padded with repetition | Same shape; different field. |
+| Item-count floor on examples / cm | Filler examples added to satisfy "≥10 examples" | Volume up, value down. |
+| Coverage floor on slot-tokens | Slot tokens (Verb-, counter) inserted in fields that don't need them | Visible coverage up; readability down. |
+
+**The discipline (codified):**
+
+1. **Quality dimensions need content checks, not size floors.**
+   Replace "rationale ≥ 6 tokens" with "rationale contains both a
+   rule-statement and a correction-statement" — even if the content
+   check is hard to automate (NLP-level), the spec for it is
+   tighter and resists gaming.
+2. **If a quality-dimension content check is too hard for static
+   analysis, drop the metric.** A non-emptiness check is enough; rely
+   on human review for the rest. Don't substitute a gameable proxy.
+3. **When metrics change, document the WHY of the change.** "Dropped
+   ≥6 token floor because reviewer flagged metric-gaming on BUG-K"
+   tells the next maintainer not to re-introduce it.
+4. **Distinguish 'Fail' from 'NA-heuristic-limit' in audit verdicts.**
+   A static check that can't handle a legitimate case (e.g.,
+   conjugation-aware pattern matching) should emit a 'NA-heuristic-
+   limit' label, not a 'Fail'. The tracker accepts NA-heuristic-limit
+   as not-a-failure.
+
+**Slot-token whitelist sub-rule:**
+
+Pedagogical slot notation (`Verb-`, `Verb-stem`, `counter`, `Adj`,
+`Noun`, `A`, `B`, `X`, `Y`, `NP`) is LEGITIMATE Latin content in
+meaning_ja. Maintain a SHARED whitelist between authoring conventions
+and audit predicates. When a new slot-token is introduced in
+authoring, extend the audit whitelist in the same commit (Rule 5).
+Otherwise the audit will flag legitimate slot notation as
+out-of-spec Latin.
+
+**Bounded coverage:**
+- "Token-count floor anti-pattern documented" — covers the specific
+  ≥6 token shape that was gamed; future similarly-shaped floors on
+  other quality dimensions are the maintainer's call (apply this
+  pattern there too).
+- "NA-heuristic-limit verdict label" — locks the specific verdict
+  vocabulary; tracker readers need to know it means not-a-failure.
+
+### F.44.34 Same drift-class lineage table extension for metric-gaming anti-pattern
+
+| Class | First seen | Lesson |
+|---|---|---|
+| metric-gaming in audit-fix passes (F.44.33) | BUG-K wcp.why expansion 2026-05-24 — independent reviewer flagged 25 rationales boilerplate-expanded to satisfy ≥6 token floor; revert applied; predicate dropped | Quality-dimension audit predicates must use content checks (does the text name a rule AND a correction) not size floors (token count, char length). If content checks are too hard for static analysis, fall back to non-emptiness — don't substitute a gameable size proxy. Distinguish 'Fail' (real defect) from 'NA-heuristic-limit' (predicate can't cleanly handle this case) in verdict labels. Maintain a shared slot-token whitelist between authoring and audit; extend on each new convention introduction. When reverting a metric-gaming fix-pass, log the revert + diff in fix_log; preserve the lesson in the procedure manual so the next maintainer doesn't re-introduce the same gameable predicate. |
+
