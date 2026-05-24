@@ -11259,6 +11259,208 @@ template: the meta-audit will surface them, and the procedure
 manual section names them so the fix is mechanical rather than
 re-invented.
 
+## F.45 SPA history-mode migration — 5 durable findings from the v1.16→v1.17 hash→pathname cutover (added 2026-05-24)
+
+Captures the migration of the N5 SPA from hash routing (`#/learn/n5-001`)
+to history-mode path routing (`/learn/n5-001/`). The migration was
+triggered by external-tool inaccessibility: LLM web-fetchers,
+link-previewers, and search-engine crawlers can't read content past
+a `#` fragment, so every pattern's URL produced an empty app shell.
+The dual-surface workaround (interactive SPA at hash route + static
+mirror at `learn/grammar/n5-XXX/` that JS-redirected to the SPA)
+worked for crawlers but produced **two URLs per page**, which is
+architecturally wasteful and a sharing-experience footgun.
+
+**Headline meta-lesson:** hash routing is the cheap default for an
+SPA on GitHub Pages, but the dual-URL pattern it forces (one hash
+URL for interactivity, one static-mirror URL for crawlers) compounds
+into routing-shape, asset-resolution, cache, and audit-trail bugs
+that all need to be solved in the same change. Plan the migration
+in 10 atomic phases (see commit `85f8a01` + follow-ups
+`52d8a9d` / `9cc58e2` for the actual N5 cutover); attempting fewer
+phases produces "half-migrated" intermediate states that 404 in
+production.
+
+### F.45.1 Class A — Hash routing duplicates URLs; history mode unifies them
+
+**Anti-pattern.** SPA reads `location.hash` for routing. Every page
+has TWO URLs:
+  - `#/learn/n5-001` (interactive SPA)
+  - `learn/grammar/n5-001/` (static crawler mirror, with a 1.5 s
+    setTimeout that redirects to the hash URL).
+The static mirror was added later to fix crawler-readability of the
+hash URL. The redundancy is invisible until you try to share a URL
+in Slack/LinkedIn (no rich preview from the hash URL) or fetch one
+with an LLM web tool (sees only the empty shell).
+
+**Detection.** Any time the codebase carries both:
+  - a route resolver that reads `location.hash`, AND
+  - a separate static-mirror generator that emits HTML at distinct
+    paths whose content overlaps with the SPA-rendered route,
+the architecture is in dual-URL state. Look for `setTimeout(...goToSPA...)`
+or `meta[http-equiv=refresh]` in the mirror — both signal "the
+mirror exists to redirect to the real URL", which means the real
+URL isn't crawler-resolvable.
+
+**Fix pattern.**
+1. Refactor `parseRoute()` to read `location.pathname` instead of
+   `location.hash`. Keep a backward-compat branch that
+   `history.replaceState`s any legacy `#/...` URL on boot.
+2. Replace every `location.hash = '#/X'` site with
+   `history.pushState(null, '', basePath + 'X/')` (or a
+   `navigateTo()` helper in a router module imported across the
+   codebase to avoid circular imports).
+3. Replace the hashchange listener with a `popstate` listener.
+   Keep the hashchange listener as a backward-compat wrapper that
+   delegates to the same route() handler.
+4. Move static mirrors to the canonical path the SPA route now
+   uses. Remove the `setTimeout(redirect)` block — let the SPA
+   boot in place by loading the SPA's `app.js` from the mirror
+   and rendering into a `<main id="app">` wrapper. The mirror's
+   static content is replaced by the SPA's dynamic render on
+   hydration; crawlers without JS keep the static content.
+5. Add a `404.html` at the site root with the rafgraph
+   spa-github-pages snippet for any deep link to a route that has
+   no static mirror (e.g. `/settings/`). Pair with a decoder in
+   `index.html`'s `<head>` that unpacks the redirect query and
+   `replaceState`s the URL back to the clean form before SPA boot.
+
+**N5 instance:** BUG-024. Pre-migration commits: `85f8a01`
+(routing) + `52d8a9d` (asset src + CSS) + `9cc58e2` (cache buster).
+
+### F.45.2 Class B — Base-aware `fetch()` doesn't cover HTML attribute resolution
+
+**Anti-pattern.** When the SPA boots from a deep mirror path like
+`/learn/n5-001/`, every relative URL in the page is resolved against
+the deep path. A `fetch()`-wrapper that prepends the base path
+(`getBasePath() + 'data/grammar.json'`) fixes `fetch()` calls. But
+HTML attribute resolution — `<audio src="audio/grammar/X.mp3">`,
+`<img src>`, `<link>`, `<script>` — uses `document.baseURI` and is
+NOT routed through the wrapper. Result: audio 404s on every deep
+link.
+
+**Detection.** Grep the codebase for HTML attribute injection
+patterns: `<audio... src=`, `<img... src=`, `<source src=`,
+`<link... href=`, plus dynamic `el.src = ...`. Any of these that
+take a relative path needs to be base-aware separately from
+`fetch()`.
+
+**Fix pattern.** Export an `assetUrl(path)` helper from the router
+module (sibling to the fetch wrapper). It returns
+`getBasePath() + path` for document-relative URLs and passes
+through absolute URLs. Wrap every HTML-attribute injection site
+through `assetUrl()`:
+
+```js
+${audioPath ? `<audio src="${esc(assetUrl(audioPath))}"></audio>` : ''}
+```
+
+**N5 instance:** BUG-025. 4 modules touched (`learn-grammar.js`,
+`listening.js`, `listening-story.js`, `reading.js`). Verification
+needs both unit-level (fetch resolves to the right URL) AND
+end-to-end (audio file `audio.load()` fires `loadedmetadata` with
+a non-zero `duration` from a deep path).
+
+### F.45.3 Class C — Cache-buster bump in TWO places after every shippable JS change
+
+**Anti-pattern.** After fixing a JS bug, you bump the SW
+`CACHE_VERSION` (good). But the `<script src="...app.js?v=N.N.N">`
+tag in every HTML file still references the OLD `?v=` value. The
+URL is what the browser uses as a cache key — same URL means same
+cache entry, so the browser keeps serving the cached version even
+though the server has the fix. SW eventually evicts on next visit
++ activate cycle, but users on the same tab as before the SW update
+won't see the fix until they close + reopen.
+
+**Detection.** After bumping SW CACHE_VERSION, grep every HTML
+file for the old `?v=N.N.N` cache-buster value. Bump every site
+that references the SPA's main JS bundle. For N5 this is the SPA
+root `index.html` + all 178+ static mirrors.
+
+**Fix pattern.** A one-shot tool that replaces `?v=<old>` with
+`?v=<new>` across all relevant HTML files. Idempotent; re-running
+is safe. Generic template:
+
+```python
+RE_APP_JS = re.compile(r'(src="[^"]*app\.js\?v=)[^"]+(")')
+for f in target_html_files:
+    text = f.read_text(encoding="utf-8")
+    new_text = RE_APP_JS.sub(rf"\g<1>{NEW_VERSION}\g<2>", text)
+    f.write_text(new_text, encoding="utf-8")
+```
+
+**N5 instance:** BUG-027. The fix landed in the same commit as the
+SW version bump; should have been bundled with the SW bump from the
+start, not deferred to a separate commit after a user-reported
+"still doesn't work".
+
+### F.45.4 Class D — Test-tooling false positive on schema-variant entries (FP-16)
+
+**Anti-pattern.** A second schema for a data field exists alongside
+the primary one. In N5's `common_mistakes` array, most entries are
+`{wrong, right, why}` (the primary schema). Some entries are
+`{kind: "register_variant", form_a, form_b, label_a, label_b, why}`
+(a second schema where both forms are grammatically valid — the
+entry teaches register *contrast*, not error correction). A naive
+auto-check that scans `for empty wrong/right` flags every
+register_variant entry as a data gap.
+
+**Detection.** Before adding a new `for empty X/Y` style check,
+look at the union of `kind` values (and equivalent type-discriminator
+fields) on the same array. If ≥2 distinct schemas exist, every
+type-naive check must short-circuit on the discriminator.
+
+**Fix pattern.** Add an explicit early-return at the top of any
+type-naive validator:
+
+```python
+for row in entries:
+    if row.get("kind") == "register_variant":
+        continue
+    # ... main check ...
+```
+
+Catalog the false positive in the audit prompt's FP catalog (FP-NN)
+so future cycle iterations don't re-discover it.
+
+**N5 instance:** BUG-023 / FP-16. Initially produced 38
+false-positive Fail flags during the v4 test-scenario run; fix
+prevented an entire review cycle from chasing imaginary bugs.
+
+### F.45.5 Class E — Windows CRLF inflates `os.stat().st_size` vs LF-normalised count
+
+**Anti-pattern.** Cross-artifact integrity invariants that store
+file sizes in JSON (e.g., `data/index.json` listing every shipped
+data file with `size_bytes`) compare the stored value to a recomputed
+value at CI time. On Linux the file has LF line endings; on Windows
+checkouts get CRLF endings, inflating the byte count by 1 per line.
+For a 77,000-line file (N5's grammar.json), `os.stat().st_size`
+reports 77 KB more than `git diff` would, and the CI invariant
+fails on every Windows write.
+
+**Detection.** Run the integrity check on a Windows checkout
+after a data write. If `size_bytes` mismatches by exactly N (where
+N = number of lines in the file), CRLF inflation is the cause.
+
+**Fix pattern.** Tools that write data files AND update the
+`data/index.json` size_bytes entry must compute the **LF-normalised
+size**, not the on-disk size:
+
+```python
+with open(path, "rb") as fh:
+    lf_size = len(fh.read().replace(b"\r\n", b"\n"))
+```
+
+This matches git's storage representation and the size the CI
+invariant recomputes from the same normalisation. Use this helper
+in every data-mutation tool, not just one.
+
+**N5 instance:** Surfaced during BUG-024 fix (JA-125 invariant
+failed after grammar.json edit on Windows). Documented in
+`N5/tools/fix_remaining_grammar_bugs_2026_05_24.py`.
+
+---
+
 ## F.44 Native-teacher review of a "shippable" corpus — 7 durable findings (added 2026-05-22)
 
 Captures the 13-bug close-out from the N5 v1.15.8 native-teacher
