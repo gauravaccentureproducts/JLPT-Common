@@ -12716,3 +12716,63 @@ out-of-spec Latin.
 |---|---|---|
 | metric-gaming in audit-fix passes (F.44.33) | BUG-K wcp.why expansion 2026-05-24 — independent reviewer flagged 25 rationales boilerplate-expanded to satisfy ≥6 token floor; revert applied; predicate dropped | Quality-dimension audit predicates must use content checks (does the text name a rule AND a correction) not size floors (token count, char length). If content checks are too hard for static analysis, fall back to non-emptiness — don't substitute a gameable size proxy. Distinguish 'Fail' (real defect) from 'NA-heuristic-limit' (predicate can't cleanly handle this case) in verdict labels. Maintain a shared slot-token whitelist between authoring and audit; extend on each new convention introduction. When reverting a metric-gaming fix-pass, log the revert + diff in fix_log; preserve the lesson in the procedure manual so the next maintainer doesn't re-introduce the same gameable predicate. |
 
+## F.46 Single source of truth for the spec — retire generators that emit a parallel prose copy (added 2026-05-29)
+
+A spec generator that renders its own prose into a second document is a
+drift engine. The next-level builder should never create one.
+
+### F.46.1 The anti-pattern
+
+A build script (N5's `tools/build_spec.py`) generated a distributable
+`.docx` "functional spec" from its OWN inline prose plus a supplement
+file. That produced a SECOND, parallel prose copy of the specification
+alongside the canonical living-Markdown spec. Symptoms:
+
+- No reader could tell which copy was authoritative.
+- Edits to the canonical `.md` did not propagate to the generated
+  `.docx`, and vice versa.
+- A design-system section diverged between the copies; an implementer
+  followed the stale copy and shipped a styling defect that cost ~1 day
+  to unwind.
+
+### F.46.2 The rule
+
+Keep exactly ONE authoritative spec — the living `.md`. Do not build or
+keep a generator that maintains a parallel prose rendering. If a
+distributable format is genuinely needed, generate it at release time as
+a throwaway artifact: never commit it, never hand-edit it, regenerate on
+demand. Otherwise skip it. When you inherit an existing parallel-copy
+generator, archive it (preserve provenance — do not delete) and fold any
+unique content back into the canonical doc in the same pass.
+
+### F.46.3 Non-blocking CI checks must be labeled "non-blocking" everywhere
+
+When a CI step runs `continue-on-error: true` (a visibility check, not a
+gate), every doc that references it must say so — "non-blocking",
+"visibility", "reports but does not fail the build". Never describe it as
+"enforced" / "locked by CI" / "blocks deploy". A non-blocking check that
+the docs call "enforced" is a false-enforcement drift: the next
+maintainer trusts a gate that is not there. (N5's design-system checker
+ran non-blocking with a ~116-violation backlog while several docs claimed
+it was "enforced" / "locked by CI"; reconciled 2026-05-29.)
+
+### F.46.4 Renaming a code/CI-referenced doc — target the name the refs already expect
+
+When a doc is referenced by FILENAME from code or CI (a CSS
+source-of-truth comment, a checker docstring, a workflow `# Source:`
+comment), a rename must target the exact name those references already
+use. grep the whole tree for the filename BEFORE renaming; a well-chosen
+rename heals dangling references instead of creating new ones. (N5's
+design-system-file rename healed three pre-existing dangling references in
+a single move.)
+
+### F.46.5 Bounded coverage
+
+- "Retire parallel-copy spec generators" — covers the specific
+  generate-a-second-prose-doc anti-pattern. Release-time throwaway
+  renderers (never committed, never edited) remain acceptable.
+- "Non-blocking checks labeled non-blocking" — applies to every
+  `continue-on-error: true` step and the docs that cite it; it does not
+  decide whether a given check should block (that is the maintainer's
+  call per the violation backlog).
+
