@@ -12833,3 +12833,65 @@ prose. It does not mandate de-duplicating prose *descriptions* of invariants
 (a human-readable reference section like spec §25 is legitimately a second
 representation — just keep its header honest and pointer-stamped per rule 3).
 
+### F.46.7 A generated artifact with a manual post-step is a regression trap; and a hand-evolved artifact can outgrow its generator (added 2026-05-29)
+
+**Two related failure modes around generated artifacts, both observed at
+N5 in one sitting, both costing rework.**
+
+**Mode 1 - the un-integrated post-step.** When the final committed artifact
+is produced by a GENERATOR (step 1) PLUS a manual POST-STEP (step 2) that
+shapes the same output, running step 1 alone silently reverts step 2's
+work. At N5 the static SEO mirrors are built by `build_static_mirrors.py`
+(emits a bare template) and then a second script injects the global
+app-header (brand + nav). The builder's own docstring said "run
+`build_static_mirrors.py`" with no mention of the injector. Running the
+builder alone therefore stripped the header from every mirror it wrote -
+shipping the exact "deep-link page looks broken, no nav" bug the injector
+existed to fix. It regressed twice before the pattern was understood.
+
+  Rules for an Nx builder:
+  1. Prefer a SINGLE-COMMAND generator: fold the post-step into the
+     generator (call it as a final stage) so one run yields the FINAL
+     artifact and cannot half-produce it. If you genuinely cannot
+     integrate, document the required sequence loudly in BOTH tools'
+     docstrings ("you MUST also run X afterwards").
+  2. CI-GUARD the post-step's contribution, not just the generator's.
+     A "every mirror contains the app-header" invariant turns "ran step 1
+     alone" from a silent ship into a red build. This is the safety net an
+     integration alone cannot give you for already-committed snapshots
+     (someone can still hand-edit or run an old tool). At N5 this is the
+     mirror-app-header-presence invariant; write the negative test too
+     (break one file, confirm the guard fails, restore).
+
+**Mode 2 - the artifact that outgrew its generator.** Over time, committed
+artifacts get hand-patched (post-steps, hotfixes, format migrations applied
+by one-shot scripts) while the generator is NOT kept in lockstep. Eventually
+the generator emits a MATERIALLY DIFFERENT artifact than what is committed,
+and "just regenerate it" is no longer a refresh - it is a migration. At N5
+the committed content mirrors were still in the pre-history-mode hash-routing
+format (redirect-to-`#/route` script + old banner), hand-patched with the
+injected header and a later nav merge, while the generator had moved to the
+history-mode template. A wholesale regen would have rewritten ~1372 pages'
+routing / canonical-URL / redirect markup (~42k lines) - an SEO-affecting
+migration, not maintenance.
+
+  Rules for an Nx builder:
+  3. Treat "generator output != committed artifact (beyond trivial
+     refresh)" as DRIFT that needs a deliberate, separately-reviewed
+     MIGRATION with its own verification (here: canonical URLs, redirect
+     behavior, render checks), never a casual rebuild. Get explicit
+     sign-off before regenerating hand-evolved artifacts en masse.
+  4. VERIFY-BEFORE-BULK-ACTING. Before committing a 1000+-file regen, diff
+     a representative sample and confirm the delta is ONLY what you
+     intended. At N5 the expected delta was a one-line cache-buster bump;
+     the actual delta was a full routing-format migration. Inspecting the
+     diff (not trusting the "rebuild = refresh" mental model) caught it
+     before it shipped. A clean per-file diff is the proof; the build
+     succeeding is not.
+
+**Meta-lesson:** when an assumption about a generated subsystem is wrong
+TWICE in a row (here: "the header is stale" - it was intentional; then
+"the rebuild is a version bump" - it was a routing migration), STOP
+bulk-operating and surface for a decision. Two misreads means the mental
+model is wrong, not the artifacts.
+
