@@ -12776,3 +12776,60 @@ a single move.)
   decide whether a given check should block (that is the maintainer's
   call per the violation backlog).
 
+### F.46.6 A derived count is a fact with one home — prose points to it, never copies it (added 2026-05-29)
+
+**Same drift-engine class as F.46.1, narrower trigger.** F.46.1 is about a
+*generator* emitting a parallel prose copy of a whole document. F.46.6 is
+about a single *number* — the count of CI invariants, the corpus sizes
+(vocab / kanji / reading / listening / papers), the audio-file total — that
+some script already derives from the live source on every run. The moment
+that number is typed as a literal into a second document, that document is a
+stale copy waiting to happen. Nobody re-greps every doc when invariant #N+1
+lands, so the literal rots silently while the deriving script stays correct.
+
+**How it manifested at N5:** the live checker reported **171** invariants,
+but the literal count was hardcoded-and-stale across ~12 living surfaces —
+`21` (governance working-note), `48` (self-host + native-audio + front-door
+README + Hindi mirror), `83` (improvement prompt × 3 + accuracy-audit
+pre-flight), `104` (cross-artifact sync-map), and — worst — the spec
+contradicted *itself*: §19 said "91 rules" while §25 (the authoritative
+reference) was headed "JA-1 through JA-145" yet its own body documented rows
+through JA-161. Five different wrong numbers, all once-correct, none updated
+when the suite grew. The deriving script (`check_content_integrity.py`) was
+right the entire time; only the prose copies drifted.
+
+**The rule for an Nx builder:**
+1. **Identify the deriving artifact.** Whatever script computes the number
+   and prints it (the integrity checker prints its own invariant count on
+   every run; a `version.json` builder derives corpus counts from the data
+   files) is the single home for that fact.
+2. **In living prose, do not state the number — point to the deriving
+   artifact.** "see `tools/check_content_integrity.py` (it reports the live
+   count)" never rots. The N5 front-door README modelled this correctly and
+   never drifted: *"Counts drift over time — when in doubt, run the checker,
+   which derives them from the live data files."* Copy that pattern.
+3. **When a number genuinely aids the reader** (a spec reference section, a
+   "current state" table), state it **with a date-stamp AND a pointer**:
+   "171 at the 2026-05-29 checkpoint; the script is the source of truth."
+   The date-stamp converts a silent lie into an honest, self-dating snapshot
+   (bounded-phrasing discipline, F.44 / Rule 4).
+4. **Distinguish living claims from point-in-time records — only fix the
+   former.** CHANGELOG entries, dated audit reports, completed-task stamps,
+   and version-stamped baselines ("v1.x.y · N invariants") are *correct*
+   historical snapshots; rewriting them destroys provenance. The fix targets
+   present-tense claims a reader takes as "the count right now."
+5. **Generated mirrors fix themselves — fix the source, never the output.**
+   If a static/SEO mirror carries the stale number, it is a stale *build* of
+   a now-corrected source; regenerate the mirror (as its own verified step),
+   do not hand-edit generated HTML.
+6. **A CI guard is usually the wrong tool here.** A "doc count must equal
+   live count" invariant fights every legitimate date-stamped snapshot and
+   point-in-time record (high false-positive rate). The durable fix is
+   structural: remove the literals so there is nothing left to drift. Prefer
+   the pointer pattern over minting a guard invariant.
+
+**Bounded coverage:** F.46.6 covers derived *scalar facts* duplicated into
+prose. It does not mandate de-duplicating prose *descriptions* of invariants
+(a human-readable reference section like spec §25 is legitimately a second
+representation — just keep its header honest and pointer-stamped per rule 3).
+
