@@ -12895,3 +12895,42 @@ TWICE in a row (here: "the header is stale" - it was intentional; then
 bulk-operating and surface for a decision. Two misreads means the mental
 model is wrong, not the artifacts.
 
+### F.46.8 Item-metadata labels drift from content via copy-paste leakage; guard the checkable subset only (added 2026-05-29)
+
+**The bug class.** Example / item records often carry a short metadata LABEL
+that is rendered to the learner - a category chip, a scenario tag, a `form`
+field ("water-request", "restaurant-order"). When an example is duplicated to
+seed a new one and the label is NOT updated, the label silently contradicts the
+content. At N5 a user caught a grammar example "ペンを ください / Please give me a
+pen" rendering the chip "WATER-REQUEST" (`form: "water-request"` copy-pasted
+from a sibling water example). The JA + EN were correct; only the label lied.
+
+**Why a naive label↔content CI guard backfires.** The obvious check - "the
+label's head word must appear in the content/translation" - over-flags massively
+(at N5: 336 of 558 hyphenated `form` labels) because MOST labels are
+GRAMMATICAL or SCENARIO descriptors (topic-introduction, list-fruit,
+existence-new, negative-request, speed-request) whose head legitimately is NOT
+in the sentence. They describe the grammar function or the request's
+manner/context, not a content noun. Flagging those is wrong.
+
+**The rule for an Nx builder:**
+1. **Separate content-attribute labels from descriptor labels.** Only a subset
+   of labels name a concrete content attribute that MUST appear in the content
+   (here: `<physical-object>-request/-order`, where the object - water, tea,
+   coffee, menu, pen, ... - is the requested item). The rest (grammatical /
+   register / scenario heads) are descriptors and are NOT content-checkable.
+2. **Guard the checkable subset with a CURATED allowlist, not a blanket rule.**
+   The CI guard keys on a curated set of content-attribute heads (e.g. the
+   physical request-objects) and asserts the head appears in the translation.
+   Heads outside the set are not checked -> zero false positives. Correctly
+   labelled items always pass (a correct "menu-request" has "menu" in its
+   translation); only copy-paste leaks fail. This sidesteps the F.46.6-rule-6
+   "guard fights legitimate states" trap by scoping the guard to the class where
+   the assertion is actually invariant.
+3. **Record the false-positive class explicitly** in the audit prompt
+   (descriptor-head labels are NOT mismatches) so a future reviewer/LLM does not
+   "fix" legitimate labels.
+4. **Detection scope is bounded; say so.** The guard catches the curated
+   object set; general semantic label↔content verification stays manual /
+   LLM-audit. A new content-attribute scenario adds one entry to the allowlist.
+
