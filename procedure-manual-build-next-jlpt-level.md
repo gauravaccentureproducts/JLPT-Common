@@ -12988,3 +12988,34 @@ Two follow-ups to F.46.9, both from a user reviewing the now-branded surfaces:
    counterpart to F.46.9's "machine links off the landing page": once a page IS
    user-facing, its remaining copy must read for the actual human audience.
 
+### F.46.11 Changing an already-baked header across all mirrors: migrate, don't re-inject; and bump the mirror CSS key (added 2026-05-30)
+
+When you need to CHANGE (not just add) the shared header/footer that's already
+baked into thousands of static mirrors - e.g. a user asks to split the brand
+lockup into two links (mark -> level picker, level wordmark -> level home) - two
+traps:
+
+1. **The header-injector skips files that already have the header**, so editing
+   its template and re-running does NOT update existing mirrors. To push a header
+   change you must either (a) regenerate every mirror header-less then re-inject
+   (heavy; and remember two generators own different mirror sets), or (b) run a
+   one-off find-replace MIGRATION over the baked files. (b) is the surgical
+   choice: a whitespace-tolerant regex (`<svg.*?</svg>` with DOTALL captures the
+   mark regardless of formatting) that matches the old lockup and rewrites it,
+   handling both the absolute-URL form (mirrors/summary/sitemap) and the
+   relative-URL form (SPA shell + SPA-clone mirrors). ALSO edit the generator
+   templates so future builds emit the new form. Dry-run on one file per form
+   first; the regex is idempotent (post-split it no longer matches).
+
+2. **A CSS change that affects mirrors needs the mirror CSS cache key bumped.**
+   Mirrors often link `main.min.css?v=<old>` with a stale, inconsistent query
+   (different mirrors carry different old versions). If your change touches CSS
+   (e.g. a new flex rule for the split lockup), returning visitors keep the old
+   CSS until the HTTP cache TTL expires -> transient broken layout. Normalize the
+   key to the current release across ALL mirrors in the same migration. Keep the
+   SPA shell's css `?v=` == js `?v=` == SW CACHE_VERSION (the version-sync
+   invariant); the mirror key is separate and only needs to change, not match.
+
+(Aside: a split lockup needs the container - not each link - to be the flex row,
+or the two `display:flex` links stack vertically.)
+
