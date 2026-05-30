@@ -12934,3 +12934,32 @@ manner/context, not a content noun. Flagging those is wrong.
    object set; general semantic label↔content verification stays manual /
    LLM-audit. A new content-attribute scenario adds one entry to the allowlist.
 
+### F.46.9 Brand the machine/SEO surfaces too - they are part of the site (added 2026-05-30)
+
+**The bug class.** A site's crawler / SEO surfaces - the static `*.html`
+syllabus-summary pages, `sitemap.xml`, machine-readable indexes - are easy to
+ship "naked": correct content, but bare default styling with no header/footer.
+A human who lands on one (via a footer link, a search result, or a shared URL)
+sees what looks like a *different* website. At N5 a user hit `/N5/home.html` and
+`/N5/sitemap.xml` and reported both as off-brand.
+
+**Two specific traps:**
+1. **The header-injection step usually globs `index.html` only.** If brand chrome
+   is added to mirrors by a post-build injector that walks `index.html` files
+   (the common pattern), the `*.html` summary pages are silently skipped and stay
+   header-less. Fix: bake the header into the summary-page GENERATOR template
+   rather than relying on the injector - this also keeps the regen drift-check
+   consistent (cf. F.46.7: generated artifact + manual post-step = regression
+   trap). Reuse the SAME header markup + stylesheet link the mirrors use.
+2. **`sitemap.xml` renders as raw XML in browsers.** Add an `<?xml-stylesheet?>`
+   processing instruction + ship a small XSL stylesheet that renders it as a
+   branded table. Crawlers ignore the PI and parse the raw `<urlset>`, so SEO is
+   unaffected; only humans get the styled view.
+
+**Related placement rule.** Keep crawler-only links (raw `llms.txt`, the raw
+sitemap, machine indexes) OFF the human landing / level-picker page - they read
+as belonging to another site. Surface only human-relevant overview links, and
+put any level-specific link (e.g. "Nx syllabus overview") in THAT level's
+footer, not on the multi-level root. Crawlers still discover the machine files
+via `robots.txt`.
+
