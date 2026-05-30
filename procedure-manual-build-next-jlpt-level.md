@@ -12963,3 +12963,28 @@ put any level-specific link (e.g. "Nx syllabus overview") in THAT level's
 footer, not on the multi-level root. Crawlers still discover the machine files
 via `robots.txt`.
 
+### F.46.10 Brand the surfaces COMPLETELY (footer too), and never leak dev jargon to learners (added 2026-05-30)
+
+Two follow-ups to F.46.9, both from a user reviewing the now-branded surfaces:
+
+1. **Header is not enough - inject the footer too.** A user noticed the static
+   pages still had NO footer menu, unlike the SPA. "Brand chrome" means header
+   AND footer. Extend the same injector to add the site footer (footer-nav +
+   trademark, absolute static-mirror URLs, no JS) before the closing body tag on
+   every mirror, idempotently. Gotchas: the injector that previously SKIPPED
+   files already having the header must stop skipping them (they still need the
+   footer - inject each element independently); a mirror may keep its own small
+   per-page footer (breadcrumb/license) - the site app-footer is a separate,
+   additional element. Guard footer-presence with its own CI invariant (here
+   JA-172), symmetric to the header guard (JA-170), so a builder-run-alone
+   cannot strip it.
+
+2. **Do not show developer jargon to a language learner.** Once a crawler/SEO
+   page becomes user-facing (linked from the footer, branded), audit its COPY
+   for terms only a developer understands: "static index", "SPA route", "JSON
+   corpus", "server-rendered HTML / no JS required", "crawler-readable". Reword
+   into plain language ("Open the grammar list", "Open the app") or remove. The
+   audience changed from crawlers to learners; the words must follow. This is the
+   counterpart to F.46.9's "machine links off the landing page": once a page IS
+   user-facing, its remaining copy must read for the actual human audience.
+
