@@ -13078,3 +13078,95 @@ translation accuracy, distractor validity; plus content-freshness / unmet-
 target items) to the deferred native-human-review track (F.36.4 / F.44.21)
 rather than chasing it with CI invariants.
 
+## Appendix F.48 — Static-mirror render-path parity (added 2026-05-31)
+
+Triggered by BUG-243: a user screenshot showed the n5-017 "HOW TO USE / 使い方"
+section as empty space under the header. Investigation found the SPA rendered
+the section correctly, but the static SEO mirror at the same route emitted
+only `<h2>Attaches to</h2><p>question_word</p>` — a single token where the SPA
+renders a 4-row conjugation table. Under any noscript / slow-boot / SW-update
+condition, the user sees the lean mirror.
+
+This is the THIRD repetition of the same pattern class:
+
+- 2026-05-29 (Part 60): `build_static_mirrors.py` ran alone, the post-build
+  app-header injector did not re-run, mirrors lost their header → JA-170.
+- 2026-05-30: same trap for the app-footer → JA-172.
+- 2026-05-31 (Part 62): the builder's HOW TO USE rendering was anemic
+  compared to the SPA → JA-173.
+
+### F.48.1 The render-path-set is bigger than the SPA
+
+Today's render-path-set for a content route (e.g. `learn/<pid>/`) has at
+least three members:
+
+1. The **SPA renderer** (`js/learn-grammar.js renderGrammarPatternDetail`)
+   produces the rich, hydrated DOM after JS boot.
+2. The **static SEO mirror** (`tools/build_static_mirrors.py`) is the
+   pre-rendered HTML served before the SPA hydrates. Under noscript,
+   slow-boot, or SW-update conditions, this is what the user sees.
+3. The **post-build injectors** (e.g.
+   `tools/inject_app_header_into_mirrors_2026_05_27.py`) add features
+   the builder did not emit (app-header, app-footer at this checkpoint).
+   Running the builder alone strips whatever the injectors had added.
+
+When a user reports "section X looks empty", probe all three render paths.
+Stopping at "the SPA looks fine on my Playwright probe" misses the bug —
+the user's browser was likely painting one of the OTHER two paths.
+
+### F.48.2 The fix is parity, not just a cache bump
+
+The temptation when the SPA renders correctly is to attribute the user's
+report to a stale cache and bump CACHE_VERSION. That is a defensive
+secondary, not the fix. The actual fix is to bring the mirror to parity
+with the SPA — the builder must emit the same shape the SPA renders, and
+a JA-NN parity invariant must lock it.
+
+Every parity bug close-out must have all three elements:
+1. The builder enhanced to emit the rich shape.
+2. A JA-NN invariant referencing verbatim content markers that disappear
+   under the bug-class (JA-173 references each `form_rules.conjugations[].
+   example` string).
+3. CACHE_VERSION bumped as a defensive secondary.
+
+### F.48.3 Surgical refresh side-steps the wholesale-rebuild trap
+
+`build_static_mirrors.py` carries a documented warning: a wholesale run
+re-migrates ~1,372 hand-patched content mirrors (routing-format + app-
+header injection state). For BUG-243 we instead wrote a surgical script,
+`tools/refresh_grammar_howto_in_mirrors.py`, which opens each
+`learn/<id>/index.html`, locates the body region between `</h1>` and the
+first `<footer>`, and regenerates only that body using the updated
+renderer. Header, footer, SPA boot script, canonical URLs, and breadcrumb
+markup pass through untouched. 178 mirrors rewritten, 0 unparseable.
+
+This is the right shape for any future "the builder produces the right
+content but the wholesale rebuild has side effects" situation: write a
+narrow body-replace script that imports the rich rendering function
+directly and substitutes only the affected region.
+
+### F.48.4 Long-term path: fold injectors back into the builder
+
+Until the post-build injectors are folded back into `build_static_mirrors.py`,
+every post-build injection target needs its own JA-NN parity invariant.
+The pattern is now well-understood: each injected feature (header,
+footer, HOW TO USE) needs (a) builder-side emission of the feature, (b)
+a JA-NN that fails the build when the feature is absent, (c) a surgical
+refresh script for the next time the feature's content shape changes.
+
+Long-term, fold the injectors back into the builder so a wholesale
+rebuild produces a true superset of the current mirrors. The builder
+becomes the single source; the injectors retire. This is tracked as a
+separate refactor, not part of any single BUG-NNN fix.
+
+### F.48.5 Bounded coverage
+
+JA-173 prevents re-introduction of *the specific bare-token mirror shape*
+(an `<h2>Attaches to</h2>` block with no `class="pattern-usage"` section)
+AND *missing-conjugation-example drift* on patterns with
+`form_rules.conjugations ≥ 2`. It does NOT constrain SPA-renderer
+regressions; those need their own invariants if they become a class. The
+"three render paths" framing locks today's known set; a future pipeline
+change (e.g. a new injection target) must extend the Phase-0 check in
+`N5/prompts/N5Improvement.txt` accordingly.
+
