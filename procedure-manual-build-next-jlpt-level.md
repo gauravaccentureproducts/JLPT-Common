@@ -13019,3 +13019,62 @@ traps:
 (Aside: a split lockup needs the container - not each link - to be the flex row,
 or the two `display:flex` links stack vertically.)
 
+## F.47 Bug-to-test-coverage traceability audit - recording gap vs testing gap (added 2026-05-31)
+
+When a stakeholder asks "are all the fixed bugs covered by tests/scenarios?",
+the naive answer (read one coverage column, count blanks) almost always
+OVERSTATES the gap. Run a layered determination instead.
+
+### F.47.1 Layered coverage determination
+
+For each Fixed bug, accept the strongest available signal:
+1. Recorded - a coverage column is already populated.
+2. Inferable - the fix-note cites an invariant id / "regression" / "verified".
+3. Literal-ID - the bug audit-id appears verbatim in an invariant description.
+4. Class-level - the invariant names a SIBLING bug-id of the same structural
+   class, or a range covering this bug (e.g. "MOB-001..016 batch").
+
+Separately bucket bugs a regression test does NOT apply to: test-scenario-
+quality / schema / triage / process fixes (the scenario IS the artifact), and
+non-product items (deploy-config such as HTTP headers / CSP, native-review-
+queue items, tooling/access).
+
+### F.47.2 The recording gap is the usual finding
+
+Expect a small fraction of fixed bugs to have a POPULATED coverage column
+while a large fraction are actually guarded. Columns get back-filled only for
+recent bugs; older ones are covered by an invariant whose id was never written
+into the row. Report this as a TRACEABILITY gap, distinct from a TESTING gap -
+they have different fixes (back-fill vs new invariant).
+
+### F.47.3 Read the invariant CHECK before declaring a gap
+
+An invariant description cites the FIRST bug of a class, not every sibling, so
+a string-search for the bug-id under-reports coverage. Before flagging a fixed
+bug as "needs a new guard", read the actual check logic: the failure mode is
+frequently ALREADY locked by an existing invariant under a sibling name (a
+"(form,reading) tuple unique" check guards a later duplicate-row bug; a
+"format_type closed enum" check guards any later undocumented-value bug; a
+"deprecate legacy field X" check guards any later contradiction-on-X bug).
+Adding a parallel invariant would duplicate the guard - reuse over recreate.
+
+### F.47.4 Authoritative back-fill discipline
+
+Back-fill the coverage column ONLY where the linkage is verifiable, and tag
+each entry as a cross-reference back-fill - never reconstruct a fix narrative
+you did not witness (no invented tool names / dates / steps). Two tiers are
+safe: (a) the invariant description NAMES the bug-id (author-declared); (b) you
+READ the invariant check and it covers the bug exact failure class. A count-
+lock invariant that merely encodes a bug numeric side-effect ("corpus size
+locked at N, adjusted -k by BUG-x") is a PARTIAL count-effect lock - label it
+as such; do not imply the full fix is locked.
+
+### F.47.5 Bounded-coverage phrasing
+
+State counts as "covered as determined by the matching method, against this
+snapshot", not "all covered". Distinguish "demonstrable link" from "fully locks
+the fix". Send the genuine residue (human-judgment correctness: grammar facts,
+translation accuracy, distractor validity; plus content-freshness / unmet-
+target items) to the deferred native-human-review track (F.36.4 / F.44.21)
+rather than chasing it with CI invariants.
+
