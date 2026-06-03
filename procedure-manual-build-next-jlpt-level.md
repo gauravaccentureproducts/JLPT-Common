@@ -13265,3 +13265,69 @@ Tag every authored reframe needs_native_review for the next native pass.
 malformed sub-class is locked by JA-NN; the judgment sub-classes remain a standing
 native-review item, not a closed enum.
 
+## F.50 Deploying a committed content fix - the version-bump derived-artifact cascade (added 2026-06-04)
+
+A content fix committed to `data/*.json` and passing content-CI is NOT live to
+users, and is NOT fully propagated, until a separate release step runs. Treat
+"deploy the fix" as a distinct procedure from "author the fix." On the N5
+v1.17.x cutover the grammar.json fixes had landed in earlier commits, yet
+cache-first kept serving the old JSON and the static mirrors still rendered the
+pre-fix content - committed, but neither deployed nor propagated.
+
+### F.50.1 Two-phase reality: authoring != deploying
+- Authoring commit edits `data/*.json` and goes green on content-CI. The fix
+  exists in the repo only.
+- Users do not see it until the cache version bumps (cache-first SW + `?v=`
+  assets keep serving the old JSON for days otherwise). No-JS / SEO crawlers do
+  not see it until the static mirrors regenerate.
+- The tell: "I fixed and committed it - why does the live site still show the
+  old text?" You authored; you did not deploy.
+
+### F.50.2 The derived-artifact cascade (run all in the same release commit)
+Bumping the build/cache version (vMM.mm.pp) and/or editing CHANGELOG makes a
+fixed set of derived artifacts stale at once. Regenerate every one in the same
+commit (N5 names; mirror on Nx):
+1. Cache version, 3 places that MUST match (CI: JA-68) - version.json
+   (version + cacheVersion), sw.js CACHE_VERSION, index.html `?v=` on css + js.
+   (Extends bumper-sticker #18 / Sec 3.2.21.)
+2. Static mirrors - the per-entity SEO/no-JS pages are RENDERED from the data
+   JSON; a content fix to the JSON does not touch them. Re-run the mirror
+   builder for the affected stage(s), then re-inject header/footer (CI:
+   JA-170/172). The builder is content-addressed: the number of real git diffs
+   it produces tells you how many mirrors were genuinely stale (proof the regen
+   was necessary, not churn). N5 example: 67 grammar mirrors differed.
+3. Corpus index size (CI: JA-125) - index.json records each data file's
+   LF-normalized byte size; bumping version.json changes its size, so update
+   that entry's `size_bytes` (and `_meta.version`).
+4. Review packet (CI: JA-156, local-only / skip-on-absent) - the gitignored
+   reviewer snapshot must match the live version; regenerate it.
+5. Meta-mirrors (CI: JA-113) - the changelog static mirror must contain the
+   latest CHANGELOG heading; re-run the meta stage AFTER editing CHANGELOG.
+6. CHANGELOG entry + spec closed-bug lineage (INV-9 lineage table).
+
+### F.50.3 Verify the deploy, not just the commit
+- A green CI proves the repo is internally consistent; it does NOT prove users
+  see the fix.
+- After push, fetch the LIVE version file (curl with a cache-bust query) and
+  confirm the new version string; spot-check one regenerated mirror for the
+  fixed content AND absence of the defect. (Reinforces the existing "fetch the
+  live data file and re-audit" gate.)
+
+### F.50.4 Anti-pattern: editing JSON by string-append (the quote-escape trap)
+Appending free text to a JSON string value via raw string-replace breaks the
+file the instant the text contains a double-quote (e.g. a note reading
+malformed 'already correct' rows, written with inner double-quotes, closes the
+JSON string early). It surfaces as several UNRELATED invariants failing at
+once, all reporting "Expecting ',' delimiter" on the same line - the signature
+of one malformed JSON file, not N real defects (every invariant that PARSES
+that file fails together).
+- Fix shape: edit JSON by parse -> mutate dict -> `json.dump` (auto-escapes),
+  never string concatenation. If you must string-edit, escape embedded quotes
+  or use single quotes inside the value.
+- Always `json.load` the file to confirm it parses BEFORE running the suite.
+
+### F.50.5 Bounded coverage
+The cascade enumerated here covers the derived artifacts wired at this
+checkpoint (JA-68 / 113 / 125 / 156 / 170 / 172); any derived surface added
+later must be appended to this list. The deploy-verification step confirms the
+live state at fetch time, not a standing guarantee.
