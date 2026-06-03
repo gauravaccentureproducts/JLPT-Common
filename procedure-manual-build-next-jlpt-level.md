@@ -226,7 +226,7 @@ This split is a direct response to the Pass-20 manual review (`Appendix E (this 
 - **Appendix B (separate file `procedure-manual-appendix-b-extracted-from-n5.md`)** — closes the remaining "extract from N5" cluster (12 items) by directly extracting schemas, rules, and conventions from the N5 codebase. Sections B.1 through B.12 cover: vocab-ID slug rule (P0), audio manifest schema (P0), JSON schemas for all data files, i18n locale format, Playwright test framework, UI module list, KB markdown grammar (BNF), all 28 invariant rule specifications, Diagnostic Summary algorithm, kanji-tier interaction, external-corpus URL list per level, and content-inventory extraction recipes (N4 kanji/vocab/grammar via authoritative-source scripts, since the agent must FETCH not INVENT content).
 - **Appendix C (separate file `procedure-manual-appendix-c-pass22-polish.md`)** — closes 7 of the 10 Pass-22 polish items (F-22.1 distractor rubric, F-22.2 ko-so-a-do scene-context formatting standard, F-22.3 JA-2/JA-23 invariant interaction clarification, F-22.4 augmented-set escape-valve guard via WHY-comment regex spec, F-22.6 auto-generation stop-condition formalization, F-22.8 full PWA spec, F-22.9 same-pattern-string conflict-resolution rule). The other two Pass-22 items live in their own files: F-22.5 LLM-audit prompt at `tools/prompts/llm_audit.prompt.md`, F-22.7 TASKS.md canonical template at `specifications/tasks-md-template.md`.
 
-Together, Appendices A + B + C close 36 of 40 Pass-20 issues plus 9 of the 10 Pass-22 polish items. Remaining open: F-22.4 / F-22.5 code-side changes (the actual JA-25 invariant in `tools/check_content_integrity.py` and the `SYSTEM_PROMPT` extraction in `tools/llm_audit.py`) — deferred to a future commit because the parallel session was active on those tool files at this commit's time.
+Together, Appendices A + B + C close 36 of 40 Pass-20 issues plus all 10 Pass-22 polish items. [UPDATE 2026-06-04: F-22.4 (JA-25 invariant in `tools/check_content_integrity.py`) and F-22.5 (`SYSTEM_PROMPT` extraction in `tools/llm_audit.py`) are BOTH shipped, so Pass-22 is 10/10; the remaining Pass-20 open items are the content-inventory fetches F-20.12/13/14, now addressed procedurally by F.51.1 and executed at the Nx build. See F.51.6 and the Appendix B post-amble (38/40).]
 
 ---
 
@@ -13442,10 +13442,11 @@ as of 2026-06-04 (verified against live code):
   SYSTEM_PROMPT from `tools/prompts/llm_audit.prompt.md` via `---SYSTEM_PROMPT---` /
   `---END---` delimiters.
 So both code-side items the preamble flagged are shipped; all Pass-22 polish items are
-now closed in code. Pass-20: Appendices A+B+C closed 36/40; the 4 residual are
-documentation-completeness acknowledgements tracked in Appendix E (not blockers) -
-re-confirm them against Appendix E on the next build and close any the A/B/C additions
-have since satisfied. Lesson (the F.39.1 governance-stale class): this note went stale
+now closed in code. Pass-20: the Appendix B post-amble records 38/40 closed; the remaining open
+items (F-20.12 / F-20.13 / F-20.14) are the Nx content-inventory / authoring
+fetches (Tanos / Bunpro), now addressed PROCEDURALLY by F.51.1 / BUG-254 and
+executed at the Nx build (Pass-21) - not a manual-readiness gap. (The older
+preamble snapshot '36/40, F-22.4/F-22.5 open' is superseded; Pass-22 is 10/10.) Lesson (the F.39.1 governance-stale class): this note went stale
 because the code shipped in a parallel session and the preamble was not updated. On
 every build, re-verify "remaining open" claims against the LIVE code before trusting
 them; supersede this preamble note in favour of this subsection.
