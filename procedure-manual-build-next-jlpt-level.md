@@ -13331,3 +13331,137 @@ The cascade enumerated here covers the derived artifacts wired at this
 checkpoint (JA-68 / 113 / 125 / 156 / 170 / 172); any derived surface added
 later must be appended to this list. The deploy-verification step confirms the
 live state at fetch time, not a standing guarantee.
+
+## F.51 Nx-build-readiness gap closures - BUG-254..260 (added 2026-06-04)
+
+Closes the seven Nx-build-readiness gaps registered as BUG-254..260 (surfaced by a
+build-readiness rating of this manual). Each closes a "the manual specifies the
+procedure" gap; the procedures execute at the next Nx build. Ordered by priority
+(P1 first). Where an existing section already covers part of a gap, this section
+completes + cross-references it rather than duplicating.
+
+### F.51.1 (P1, BUG-254) Authoritative Nx content inventory - manifest + verify gate
+Appendix B.12 already gives FETCH-not-INVENT extraction recipes; the missing piece
+is a committed, count-verified inventory the authoring passes treat as the source
+of truth. Procedure, run BEFORE any content authoring (build layer 3):
+1. For each corpus (kanji / vocab / grammar) produce `feedback/n<L>-<corpus>-inventory.md`
+   by running the B.12 recipe against the §A.7 source-authorities (JLPT-official
+   where published; else the documented curated lists, per B.11). Never hand-type
+   the list - fetch it.
+2. Each inventory row carries: surface form, reading, gloss, source tag, and a
+   `tier` (new-at-<L> vs prerequisite). One row = one intended entry = one future ID.
+3. Count-reconciliation gate (NEW): assert each inventory's row count sits inside the
+   §0 scope-table band for <L> (e.g. N4 kanji ~280 cumulative / ~170 new; vocab
+   ~1500; grammar ~210). A count outside the band HALTS authoring with an "inventory
+   vs scope-table mismatch" message - it means the fetch under- or over-collected.
+   Wire it as a build-data preflight, not a post-hoc audit.
+4. Authoring consumes inventory IDs only; an authored entry whose ID is absent from
+   the inventory is a defect (add a JA-NN cross-ref check on Nx: every data/*.json id
+   resolves to an inventory row).
+Bounded: the inventory is authoritative against the source snapshot fetched; the JLPT
+publishes no official post-2010 lists, so curated sources carry a documented
+confidence note (B.11). This closes the Pass-20 finding restated at Appendix E
+(content lists sized but not identified).
+
+### F.51.2 (P1, BUG-255) Native-accuracy validation - sampling protocol + two-gate ship
+F.49/F.50 establish that "is this valid Japanese?" is not auto-guardable. This is the
+corpus-scaled human-in-the-loop protocol (the §19 native-teacher playbook is
+per-item; this sizes it):
+- Two-gate ship: v1 ships LLM-only (`auto:false, review_status:"llm_only"`), every
+  authored entry tagged `needs_native_review`; v2 promotes `review_status ->
+  "native_verified"` after a native pass. Any "verified" badge stays gated at v2
+  (F.20.5).
+- Stratified sample when a full native pass is infeasible: review a random sample per
+  corpus sized for ~95% confidence / ~+-5% margin (the usual ~370-of-large-N rule),
+  AND 100% of CRITICAL surfaces (wrong/correct pairs, cultural callouts, politeness
+  ladders - the F.49 false-negative classes live here). Record sample size + found
+  error-rate in `feedback/native-review-<corpus>.md`.
+- Acceptance threshold: suggest <2% error on examples and 0% on wrong/correct pairs.
+  Above threshold -> full pass on that corpus, not just the sample. Below -> ship v1
+  with the rate disclosed in bounded phrasing ("native-reviewed sample of N;
+  estimated error rate X% +- margin").
+- Reviewer brief: hand the native reviewer the §19 brief + the F.49 sub-class
+  checklist so the pass targets the known classes (register vs error, pragmatic vs
+  grammar, false negatives).
+Bounded: a sample bounds the error rate; it does not certify every entry. Only a full
+native pass closes `native_verified` for a corpus.
+
+### F.51.3 (P2, BUG-256) Multi-pass authoring schedule with per-corpus quotas
+Mode B yields scaffold + ~20% content in one run; the rest lands over numbered passes
+with explicit quotas + per-pass definition-of-done. Default schedule (scale absolute
+counts by the §0 band for <L>):
+
+| Pass | Target (cumulative) | Per-corpus done-when |
+|---|---|---|
+| 1 (one-shot) | MVS per §A.4: ~20% of each corpus + ALL critical paths | builds green; all CI invariants pass; UI renders one of each entity |
+| 2 | 100% kanji whitelist; 50% grammar + vocab | every kanji entry present (whitelist is finite + gates JA-13); grammar/vocab half |
+| 3 | 100% grammar; 80% vocab; full reading set | all patterns authored; reading covers each format type |
+| 4 | 100% vocab + listening + mock papers | full corpus present; papers per §A.9 timing |
+| 5 | native review (F.51.2) + audit cadence (F.5) | review_status promoted; bounded-coverage doc written |
+
+Stop condition per pass: counts reach quota AND CI green AND no open P1/P2 bug. Kanji
+leads (finite, bounded, gating). Bounded: quotas are targets against the §0 band, not
+guarantees; a pass that reaches CI-green below quota logs the shortfall in TASKS.md
+rather than padding content to hit a number.
+
+### F.51.4 (P2, BUG-257) Per-level effort + tooling scaling (extends the §0 table)
+The §0 scope table quantifies COUNTS; the gap was the EFFORT + TOOLING those counts
+imply. Add:
+
+| Level | Content vs N5 | Native-review load | Tooling change beyond N5 ports |
+|---|---|---|---|
+| N4 | ~1.5x | full pass still feasible | none; one-time tier-taxonomy + kanji-policy decisions |
+| N3 | ~3-4x vocab | sampling becomes mandatory (F.51.2) | batch the LLM audit; shard large data/*.json reads |
+| N2 | ~6x vocab | sample-only feasible; full pass = months | paginate static-mirror builds; memory-aware loaders |
+| N1 | ~10x vocab, ~2000 kanji | sample-only; expert reviewer (academic register) | incremental/only-changed builds; watch CI runtime budget |
+
+Effort: N5 = 17-25 wks (§13). Scale ~linearly with vocab for N3/N2; super-linearly
+for N1 (register complexity + reviewer scarcity dominate). Re-estimate per level; do
+NOT assume the N5 timeline. Bounded: multipliers are planning estimates derived from
+the §0 counts, not measured build data.
+
+### F.51.5 (P2, BUG-258) Audio decision - synthetic default (ship-acceptable), native path documented
+Default (§0.A.2) is synthetic TTS (VOICEVOX per D.1), tagged `voice:"synthetic"`,
+and this IS acceptable-for-ship at the v1 bar for N4..N1. v1 quality bar: pitch-accent
+correct on headwords (spot-check vs OJAD); no dropped particles (the F.12 bunsetsu-space
+trap); single speaker per role; pace per the §0 listening row; unified speed_scale
+(F.27). Native-audio path (optional, v2+): record per the audio_manifest schema (B.2),
+keep `audio_render_meta.voice_provider`, budget a native VA only for listening drills
+where synthetic prosody actively misleads comprehension. Decision: synthetic is the
+documented ship default; native voice is an explicit v2 upgrade, not a build blocker.
+Bounded: synthetic-acceptable applies to the stated v1 bar; high-stakes listening
+realism remains a v2 native item.
+
+### F.51.6 (P3, BUG-259) Pass-20 / Pass-22 residual status - CORRECTED
+The Mode-A/B preamble line "Remaining open: F-22.4 / F-22.5 code-side changes" is STALE
+as of 2026-06-04 (verified against live code):
+- F-22.4 (JA-25 whitelist-exceptions invariant): DONE - wired in
+  `tools/check_content_integrity.py` (registry entry "JA-25 Whitelist exceptions
+  documented (Pass-22 F-22.4)").
+- F-22.5 (llm_audit SYSTEM_PROMPT extraction): DONE - `tools/llm_audit.py` loads
+  SYSTEM_PROMPT from `tools/prompts/llm_audit.prompt.md` via `---SYSTEM_PROMPT---` /
+  `---END---` delimiters.
+So both code-side items the preamble flagged are shipped; all Pass-22 polish items are
+now closed in code. Pass-20: Appendices A+B+C closed 36/40; the 4 residual are
+documentation-completeness acknowledgements tracked in Appendix E (not blockers) -
+re-confirm them against Appendix E on the next build and close any the A/B/C additions
+have since satisfied. Lesson (the F.39.1 governance-stale class): this note went stale
+because the code shipped in a parallel session and the preamble was not updated. On
+every build, re-verify "remaining open" claims against the LIVE code before trusting
+them; supersede this preamble note in favour of this subsection.
+
+### F.51.7 (P3, BUG-260) Source-repo pin + snapshot delineation
+Both operating modes require the live source (N5) repo; "copy from N5 / port verbatim"
+breaks if the source moves or drifts. Closure:
+- Source pin: this manual is validated against `gauravaccentureproducts/JLPTSuccess`
+  at commit `92690ae8` (N5 source, 2026-06-04). Re-record this pin on every
+  manual-validation pass; when building N<L>, prefer the pinned commit as the
+  "copy from N5" reference so instructions resolve to the files they were written
+  against.
+- Snapshot vs live delineation: Appendix B already SNAPSHOTS the drift-sensitive
+  structure - JSON schemas (B.3), vocab-ID slug rule (B.1), audio-manifest schema
+  (B.2), invariant specs (B.8). Rule: if a "copy from N5" target is STRUCTURAL
+  (schema / rule / invariant / id-format) it must be snapshot in Appendix B; if it is
+  BULK content or code, it stays a LIVE reference read at the pinned commit.
+Bounded: the pin fixes a known-good reference point; it does not vendor the source -
+a build still needs the source repo present (the Mode-A/B precondition stands).
