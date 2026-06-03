@@ -13170,3 +13170,38 @@ regressions; those need their own invariants if they become a class. The
 change (e.g. a new injection target) must extend the Phase-0 check in
 `N5/prompts/N5Improvement.txt` accordingly.
 
+
+## F.48 Native-review-prep content cleanup - 9 reviewer issue-classes, detector-driven (added 2026-05-31)
+
+Before sending an Nx grammar corpus to a native reviewer, run a first-pass cleanup of mechanical / surface issue-classes so the native focuses on genuine language nuance, not obvious noise. Calibrate the fix on ONE entry, show the maintainer, then horizontal-deploy with a detector per class.
+
+### F.48.1 The 9 classes (from the N5 grammar review)
+1. Fragmented English / jargon-token explanations (e.g. "X CLAUSE"); also broken "vs ?:" contrast placeholders (template target never substituted).
+2. Inconsistent English translation of the same pattern across examples.
+3. Overstated register superlatives ("most-used", "Don't overuse").
+4. False wrong/correct contrasts (a grammatical sentence struck through; the "correct" field is a note, not a sentence) -> reclassify to register_variant.
+5. Near-identical duplicate example sentences.
+6. Inconsistent bilingual section labels (some sections chipped, some not).
+7. Force-fit politeness ladder on items that do not inflect for register (tell: humble == respectful).
+8. Raw internal pattern ids (n5-NNN) leaked into learner-facing prose.
+9. Duplicate content across two fields (same text in essay.cultural_context AND cultural_callout.note), rendered twice.
+
+### F.48.2 Detector-driven, not blanket
+Write a data-agnostic detector per class and fix only genuine instances. Verify class membership before "fixing" - several flags are FALSE POSITIVES that must be LEFT ALONE: "never use X / always Y" are correct hard grammar rules, not register overstatements; comparison-pattern examples naturally share an end-clause (inherent, not a duplicate); formation formulas ("Noun + を + ください") are clear notation, not fragmented English; audio-path ids (audio/grammar/n5-NNN.N.mp3) and _alias_of/_homonym_of ref fields legitimately carry ids and must not be stripped.
+
+### F.48.3 Render-level vs data-level de-dup
+When a duplication is systemic (class 9 hit 174/178 patterns - the cultural note stored verbatim in two fields), fix it at the RENDER level (stop rendering one copy in BOTH the SPA renderer and the doc generator) rather than editing N data entries. One render change, reversible, no data churn.
+
+### F.48.4 ID-strip keeps the human-readable name
+Class 8: strip "(n5-NNN)" parentheticals (the named target usually precedes them) and replace bare "n5-NNN" with the target pattern's display name (lookup). Never leave a dangling "see ." Same principle as resolving alias/homonym labels to names in the renderer.
+
+### F.48.5 Gotchas that cost CI cycles
+- index.json size_bytes is LF-normalized (JA-125 computes len(read().replace(CRLF,LF))). Windows text-mode writes produce CRLF; record the LF size, or write data files with newline='\n'.
+- Stripping ID/parenthetical text can drop an essay under a min-char richness bar (JA-54 >=500); enrich with genuine content, not id-padding.
+- Bug-tracker Fix Commit cells must be a SINGLE hash or a <...> sentinel (JA-146) - "hashA + hashB" fails. Cite one commit per row.
+
+### F.48.6 CI guards added
+JA-174 (no raw n5-NNN in learner-facing grammar prose), JA-175 (no unfilled "vs ?:" placeholder), JA-176 (no identical-ja duplicate examples within a pattern). These lock classes 8/1/5 against re-introduction of THESE specific patterns.
+
+### F.48.7 Bounded-coverage phrasing
+Fixes authored by the maintainer (rewrites, new examples, trimmed ladders) are PROVISIONAL and tagged for native confirmation - the native reviewer reviews; the maintainer implements. State counts as "addressed against the detector's pattern set, this snapshot", not "all fixed".
