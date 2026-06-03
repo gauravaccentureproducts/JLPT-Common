@@ -13221,3 +13221,47 @@ JA-174 (no raw n5-NNN in learner-facing grammar prose), JA-175 (no unfilled "vs 
 
 ### F.48.7 Bounded-coverage phrasing
 Fixes authored by the maintainer (rewrites, new examples, trimmed ladders) are PROVISIONAL and tagged for native confirmation - the native reviewer reviews; the maintainer implements. State counts as "addressed against the detector's pattern set, this snapshot", not "all fixed".
+
+## F.49 Native-review false-negatives - 'correct sentence marked wrong' (added 2026-05-31)
+
+After the first-pass cleanup (F.48), a native pass over EVERY wrong/correct (✗/✓)
+pair surfaced a distinct, higher-severity class: FALSE NEGATIVES - the struck (wrong)
+sentence is itself correct, natural Japanese. Marking it wrong teaches learners to
+AVOID correct forms.
+
+### F.49.1 Sub-classes
+1. Register/politeness swap (CRITICAL): plain vs polite of the SAME meaning struck as
+   wrong (だろう/でしょう; から/ので). Both correct.
+2. Sentence-final-particle intent swap: ね/よ/よね marked wrong vs each other - they
+   differ in INTENT (agreement / informing / shared-agreement), not grammaticality.
+   'よ, not both' is a linguistic error: よ and ね co-occur as よね.
+3. Pragmatic/cultural mislabeled as grammar (じょうず about oneself = boastful but
+   grammatical) - that is a culture note, not an error.
+4. Data-pairing error: a correct sentence paired against an unrelated correction
+   (past-affirmative vs past-negative).
+5. MALFORMED (structurally detectable): the 'correct' field literally admits the
+   'wrong' is correct ('already correct', 'IS valid', '(correct)').
+6. Focus-particle が vs は: が is correct under a focus/'who?' reading; only 'less
+   natural' for a neutral statement - not ungrammatical.
+
+### F.49.2 Auto-detectable vs native-only
+Only the MALFORMED sub-class (#5) is deterministically guardable - regex the
+correct/right field for self-admission text (CI: JA-177 on N5). The rest need native
+grammaticality judgment on the struck sentence IN ISOLATION; no scanner decides 'is
+this valid Japanese'. Plan a human native pass; do not claim a content-CI closes it.
+
+### F.49.3 Fix shapes
+- Register/intent swaps -> register_variant (both forms neutral; why explains nuance).
+  Never keep a ✗/✓ between two valid forms.
+- Pragmatic/cultural -> culture/usage note (or variant), not ✗.
+- Data-pairing / malformed -> reframe the ✗ to a GENUINE, confident error (reading slips
+  よじ/しちじ/ろっぷん, い-adj past たかかった vs x たかいでした, final-particle placement, お/ご,
+  space-before-か). Keep the entry count; do not delete.
+- が/は -> append a focus-reading note; keep, do not flat-mark wrong.
+Tag every authored reframe needs_native_review for the next native pass.
+
+### F.49.4 Bounded coverage
+'Reframed N flagged false negatives from the native pass against this snapshot'; the
+malformed sub-class is locked by JA-NN; the judgment sub-classes remain a standing
+native-review item, not a closed enum.
+
