@@ -13466,3 +13466,68 @@ breaks if the source moves or drifts. Closure:
   BULK content or code, it stays a LIVE reference read at the pinned commit.
 Bounded: the pin fixes a known-good reference point; it does not vendor the source -
 a build still needs the source repo present (the Mode-A/B precondition stands).
+
+## F.52 Template-generated content artifacts - conjugation + semantic-frame nonsense (added 2026-06-04)
+
+A native-reviewer specific-bug audit (BUG-266) cited 12 concrete JP-content errors in
+the vocab corpus. Reproduction confirmed all 12 AND revealed they were instances of a
+SYSTEMATIC template-generation defect: an auto-builder filled headwords into fixed
+frames without conjugating or checking sense. The cited 12 were the visible tip of
+~142 affected entries. This is the durable lesson for any Nx corpus that was
+bulk-seeded by frame templates.
+
+### F.52.1 The two sub-classes
+1. MALFORMED CONJUGATION (objective). A field built as "<headword> + ます" / "<headword>
+   + ました" appends the polite ending to the DICTIONARY form: べんきょうするます,
+   かすました, あるます, すむます. Never valid - you conjugate the stem. In N5 vocab this
+   hit ALL 110 verbs (the particle_examples template emitted form+ます and form+ました
+   for every verb regardless of class).
+2. SEMANTIC-NONSENSE FRAME (needs judgment). A fixed example/collocation frame applied
+   to a headword it can't pair with: 「今日は とても <adj>です」 for non-weather adjectives
+   (今日は 白い / まるい / ぬるい = a day isn't white/round/lukewarm), 「えいがは <adj>でした」
+   for color/taste/size adjectives ("the movie was yellow") - which ALSO carries an
+   い-adjective past-form grammar error (でした, not かったです), 「この <noun>は <adj>です」
+   mismatches (この りんごは うるさいです = an apple isn't noisy), and noun-as-buyable-object
+   frames (あたらしい / たかい カタカナ - a writing system isn't new/expensive).
+
+### F.52.2 Sub-class 1 is deterministic - fix + lock
+A malformed conjugation is wrong at any JLPT level, so fix it programmatically with a
+verb-class-aware conjugator (read pos / verb_class per entry):
+- godan (verb-1): final う-row kana -> い-row + ます (す->し, く->き, む->み, る->り, つ->ち,
+  ぐ->ぎ, ぶ->び, ぬ->に, う->い). ある->あります.
+- ichidan (verb-2): drop final る + ます.
+- irregular (verb-3): する->します; 来る->来ます; <X>する->Xします.
+Per-entry pos is what disambiguates a homonym: きる(verb-1, cut)->きります vs きる(verb-2,
+wear)->きます. Then ADD a JA-NN regression guard that compares each example against the
+entry's OWN form+ます / form+ました - a PRECISE comparison never false-positives on a
+correctly conjugated form (かします != かす+ます). JA-178 is the N5 instance.
+
+### F.52.3 Sub-class 2 needs sense judgment - allowlist-remove, never fabricate
+A semantic frame is valid for SOME headwords and nonsense for others. Do not blanket-
+delete (many 「この本は おもしろいです」-style sentences are fine) and do not blanket-keep.
+Use a conservative allowlist for the frame's valid semantic class (e.g. 「今日は とても X」
+-> weather/day-quality adjectives only: すずしい / あたたかい / いい) and REMOVE the rest.
+Removal is safe and non-fabricating; rewriting needs a native speaker. GUARD: never
+reduce an entry below 1 example - if a removal would empty the field, skip it and log
+for native attention. The few salvageable-by-grammar-fix cases (えいがは 長いでした ->
+長かったです is sensible) are not worth the per-item risk of an LLM deciding which; leave
+them for the native pass.
+
+### F.52.4 The meta-lesson: audit the whole field, never just the citation
+When a reviewer cites N instances of a defect in a TEMPLATE-GENERATED field, the real
+scope is "every entry the template touched", not N. Reproduce each citation against the
+live data first (confirm it exists - do not trust the extracted report's row numbers,
+which may be docx page positions not entry IDs), then scope the systematic class with
+one query before fixing. BUG-266: cited 12 -> actual 110 conjugations + ~32 nonsense
+sentences. Split the fix: deterministic sub-class fixed + CI-locked this pass; sense-
+judgment sub-class either allowlist-removed (clear nonsense) or deferred to the native
+queue (residual naturalness, e.g. まいにち すむ adverb collocations -> the OPEN-003/004
+particle-example class).
+
+### F.52.5 Bounded coverage
+JA-178 prevents re-introduction of *the specific form+ます / form+ました malformation* in
+verb particle_examples. It does NOT validate that a particle_example is a good particle
+example (the field is template-seeded and its naturalness is native-judgment work), nor
+does it catch malformed conjugations in OTHER fields (examples[].ja, glossaries). The
+semantic-frame removals are "addressed against the cited frames + the conservative
+allowlist, this snapshot" - a native pass still owns the residual.
