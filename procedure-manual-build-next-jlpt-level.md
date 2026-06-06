@@ -13531,3 +13531,45 @@ example (the field is template-seeded and its naturalness is native-judgment wor
 does it catch malformed conjugations in OTHER fields (examples[].ja, glossaries). The
 semantic-frame removals are "addressed against the cited frames + the conservative
 allowlist, this snapshot" - a native pass still owns the residual.
+
+## Appendix F.53 — Reviewer deliverables: auto-stamp + keep-exactly-one (stale-copy prevention) (added 2026-06-06)
+
+A human-review deliverable (e.g. the vocab review .docx emitted by
+build_vocab_review_docx.py) is uploaded to an external store (SharePoint / Drive) by
+hand. That uploaded copy does NOT auto-refresh from the repo build. Two failure modes
+recurred on the N5 native-review cycle and cost several review round-trips:
+
+### F.53.1 The two stale-copy failure modes
+1. STALE COPY - after a fix lands in the repo build, the reviewer re-checks the SAME
+   previously-uploaded file. The fix is in the repo but not in their copy, so they
+   re-report an already-fixed item as "still pending". Nothing is wrong with the data.
+2. WRONG DATED COPY - once several timestamped builds pile up in the output folder, the
+   older (pre-fix) one gets uploaded by mistake instead of the newest. Same symptom: a
+   "pending" report against a bug already fixed in the latest build.
+
+### F.53.2 The builder rule (keep exactly one dated file)
+The builder that emits a reviewer deliverable MUST, on every full build:
+  - stamp the output filename with build date+time (YYYY-MM-DD_HHMM), AND
+  - delete any prior stamped copies first, so the folder holds exactly ONE dated file
+    = the current build.
+Reference implementation (build_vocab_review_docx.py, arg=='all'):
+    stem = os.path.splitext(out_path)[0]
+    for prev in glob.glob(stem + "_*.docx"): os.remove(prev)
+    shutil.copy2(out_path, stem + "_<stamp>.docx")
+The canonical un-stamped file stays as the tracked / diff-able artifact; the single
+stamped copy is the upload target. The date in the name is the unambiguous "this is the
+latest" signal - reviewers are told to grade ONLY the file with the newest stamp.
+
+### F.53.3 Diagnostic before re-fixing a re-reported item
+When a reviewer re-reports an item you believe is fixed, do NOT re-edit data first.
+Compare the offending string's count across three places: (a) the source data, (b) the
+canonical repo build, (c) the uploaded copy. If (a) and (b) are 0 but the report
+persists, it is a STALE / WRONG upload, not a code defect - the fix is to re-upload the
+freshly-stamped file, not to touch data. This three-way count check turns "the reviewer
+keeps reporting it" from a mystery into a one-command diagnosis.
+
+### F.53.4 Bounded coverage
+Auto-stamping guarantees the repo always offers exactly one current dated file; it does
+NOT control what a human ultimately uploads to the external store. The operator step
+(re-upload the newest stamp after every fix) remains a manual hand-off and is the
+residual failure surface.
