@@ -13689,3 +13689,77 @@ responsibility for correctness.** General rule for any Nx build:
   away from regressing.
 - **Lock it.** Add a Phase-0 / grep check that the rendered-label strings are absent from served JS
   + learner-facing HTML/README (internal data fields, audit docs, and NOTICES disclaimers excluded).
+
+## Appendix F.57 — Live UI-review fix cycle: learner-facing hygiene + verification discipline (added 2026-06-08)
+
+A rapid live-site review by the product owner produced a batch of small UI fixes. These are the
+generalizable patterns + the verification discipline every Nx level should reuse. The shape of the
+cycle: owner reviews the live SPA → fires terse findings → fix the reported item + horizontally
+deploy → ship per batch (one cache bump each) → register every finding in the bug sheet with status.
+
+### F.57.1 Collapse overlapping render sections; a "words containing this kanji" list must exclude kana-only homophones
+Two detail-page sections that present the same data under different headings ("Example usage" vs
+"Words containing this kanji") read as duplicates - merge into ONE. Build the merged list from the
+union of the candidate arrays (e.g. `examples[]` for the richer compound set + the vocab-linked
+`n5_compounds[]`), dedup by surface form, and make a row clickable through to its vocab entry when one
+exists. CRITICAL filter: a "words/compounds containing this kanji" list must include ONLY forms that
+literally contain the target glyph (`glyph in form`). Kana-only homophones (e.g. あめ "candy" shares
+the reading of 雨 but contains no kanji) must be excluded - listing them under "contains this kanji"
+is simply wrong. Keep the homophone data if it has teaching value; just don't render it in that list.
+
+### F.57.2 Scroll to top on every route change
+A hash-routed SPA retains the window scroll position across route changes, so opening a list item
+(e.g. a kanji card) can land the user mid-page with the item's header (the large glyph) off-screen.
+Add `window.scrollTo(0, 0)` after the route handler renders, in the central router. Hash routing
+carries no in-page anchors, so this is always safe and is the expected behaviour.
+
+### F.57.3 Em-dash / smart-punctuation sweep: scope it, prove it's safe, defer the dense prose
+Owners often want em-dashes (—) and other smart punctuation removed as an "AI-tell." At scale this is
+NOT a hand-edit. Method that worked:
+- **Measure first.** Count occurrences per surface. The split is usually lopsided: a few hundred in
+  UI chrome (render strings + locale files + index.html) vs tens of thousands buried in the dense
+  bilingual EXPLANATION prose in `data/*.json`. Scope the first pass to UI chrome; DEFER the prose to
+  a separate reviewed pass (a per-sentence context-aware rewrite + native-script clause-break review)
+  and log it in the task backlog so it isn't lost.
+- **Prove no logic dependency before a scripted replace.** Grep the code for the character inside
+  regex / string-comparison / RegExp contexts. If there are none (the usual case - em-dashes live in
+  display strings + comments only), a uniform scripted replace is safe: spaced " — " → ", " (clause
+  break reads naturally as a comma for short labels); tight "—" → "-".
+- **Don't over-engineer string-vs-comment isolation.** A hand-rolled JS tokenizer drifts on regex
+  literals. Since there's no logic dependency, replacing inside comments too is harmless (comments are
+  stripped from the minified bundle and never render) - accept the wider diff rather than risk a
+  fragile parser.
+- **Verify by absence.** After rebuilding the mins, grep the SERVED bundles (`js/min/*` + the minified
+  CSS) for the character → expect 0. `node --check` every js file to confirm no replacement broke a
+  regex.
+
+### F.57.4 Verification + test maintenance for UI removals
+- **Source edits are invisible until the mins rebuild** (see F.55.1). After ANY UI/source change run
+  the min-CSS and min-JS builders before the cache bump - this is the single most repeated trip-up.
+- **Removing a feature means updating its test to assert ABSENCE, not deleting the test.** When a
+  filter card / badge / section is removed, rewrite the spec to assert the elements are gone
+  (`toHaveCount(0)`) and the surrounding view still renders (e.g. the full unfiltered grid). A stale
+  test that still asserts the removed element EXISTS will go red in CI.
+- **Local SPA route-content may not render under a bare static server.** Serving the app at a plain
+  `localhost:PORT/` (or a sandbox preview) can leave the router stuck on the loading skeleton (base-
+  path / data-fetch / SW timing), even though production is fine. Use the project's dedicated test
+  server (the Playwright `webServer`) for UI tests, and do NOT conclude "the app is broken" from a
+  local skeleton. As a deploy-safety gate that does NOT need a browser, `node --check` the MINIFIED
+  bundles (the minifier can in theory mangle output a source-only check would miss) and rely on CI's
+  browser run for render assertions.
+- **Beware over-broad test selectors.** A selector like `.brand-link` that matched one element can
+  silently start matching two after a header/levels change, tripping the test runner's strict mode.
+  Prefer a selector scoped to the specific element. (Flag pre-existing fragility to the owner rather
+  than silently rewriting tests outside the current change's scope.)
+- **Register every review finding in the bug sheet with status + a real fix commit** (hash, or a
+  `<deferred-...>` sentinel for deferred items, per the Fix-Commit-shape invariant). Group a session's
+  findings under a clear prefix; the changelog carries the narrative, the bug sheet carries the
+  canonical status.
+
+### F.57.5 Static SEO/no-JS mirrors lag the SPA - flush them deliberately
+A cache-bump deploys the SPA data path immediately, but the pre-rendered static mirror pages keep
+serving OLD content until regenerated. After a batch of data/UI corrections, regenerate the affected
+mirror stage (pure-Python generator; runs reliably even where the SPA won't boot locally) + re-inject
+the app header/footer, and verify a corrected value flushed through. Note that the mirror generator
+may render a DIFFERENT (often simpler) subset than the SPA - confirm which fields it emits before
+assuming an SPA-only issue (e.g. a candy/homophone row) even exists on the mirror.
