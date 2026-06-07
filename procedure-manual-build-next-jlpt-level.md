@@ -13665,3 +13665,27 @@ the skeleton) — a base-path assumption, not a code defect. To render-verify a 
 either serve under the same path prefix, or verify the component with a static HTML harness (real
 `main.min.css` + the real asset + the exact emitted markup) and confirm the visual on the live
 deploy. Do NOT conclude "the app is broken" from a localhost-root skeleton.
+
+## Appendix F.56 — Review-provenance is internal; never a learner-facing tag (added 2026-06-08)
+
+A round of audits built a `review_status` field (`{native_reviewed, llm_curated, auto_generated}`)
+on every content item AND a learner-facing badge that displayed it ("AI quality-reviewed" next to
+kanji meanings / vocab glosses, an "auto / pending native review" tag on mnemonics, a
+"native-teacher-reviewed" footnote on the papers page, a "native_reviewed" claim in the README).
+The product owner directed (2026-06-08): **who or what reviewed an item is the owner's concern, not
+a learner-facing signal — the learner must see only the content; the owner takes final
+responsibility for correctness.** General rule for any Nx build:
+
+- **Keep the data, kill the display.** A provenance / review-status field is useful internal
+  metadata (audit tracking, CI completeness like JA-35) — retain it. But it must NEVER render to
+  the end user, as a badge, banner, tooltip, footnote, or README claim.
+- **A misnamed quality tag is worse than none.** Here the value was machine-assigned (LLM acting as
+  a reviewer persona), so "native-reviewed" / "AI quality-reviewed" overclaimed trust. Showing it
+  invited a credibility hit the moment a learner found an error. Don't ship trust signals you can't
+  stand behind.
+- **Disable at the source, not just the flag.** The badge was gated behind a settings flag that had
+  silently defaulted ON (comment said "default false"; code said `true`). Belt-and-suspenders:
+  hard-disable the render function (return '') AND set the flag false — a flag alone is one toggle
+  away from regressing.
+- **Lock it.** Add a Phase-0 / grep check that the rendered-label strings are absent from served JS
+  + learner-facing HTML/README (internal data fields, audit docs, and NOTICES disclaimers excluded).
