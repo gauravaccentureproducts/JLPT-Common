@@ -13626,3 +13626,42 @@ contain that on-reading.
 The reading-rule correction covers "every on-dominant kanji detected by the primary_reading-in-
 on'yomi signal in this snapshot." No CI invariant locks reading-rule correctness — it is
 native-judgment prose, and the signal is a detection aid, not a guard.
+
+## Appendix F.55 — Per-entry image assets (kanji mnemonic illustration) + the min-rebuild trap (added 2026-06-07)
+
+A proof-of-concept added a per-kanji mnemonic illustration (`img/kanji/<glyph>.png`) to the
+kanji detail's "Radical & mnemonic" section. Three reusable lessons:
+
+### F.55.1 Source edits are INVISIBLE until you rebuild the mins
+The SPA serves `js/min/*.js` and `css/main.min.css` (index.html links the minified files; the
+ES-module entry is `js/min/app.js`). Editing `js/<x>.js` or `css/main.css` alone changes NOTHING
+the running app sees. After ANY UI/source change you MUST run BOTH:
+  `python tools/build_min_css.py`   (css/main.css -> css/main.min.css)
+  `python tools/build_min_js.py`    (js/*.js -> js/min/*.js)
+Symptom when forgotten: the page renders the OLD behaviour with no error, and a local preview
+shows your change "missing." This cost a full debug cycle here. Make the two min-rebuilds a
+reflex deploy step, right next to the cache bump.
+
+### F.55.2 Pattern for a per-entry image asset
+Mirror the existing `stroke_order_svg` pattern (a relative-path field on the data entry):
+- data: `mnemonic_image: "img/kanji/<glyph>.png"` + REQUIRED sibling `mnemonic_image_alt`
+  (screen-reader text — the card bakes its own Japanese text into pixels, invisible to assistive
+  tech) + `mnemonic_image_provenance`.
+- render: a lazy-loaded `<figure><img loading="lazy" decoding="async" alt=...></figure>` inside
+  the section; the image is SUPPLEMENTARY — authoritative readings/meaning stay as live HTML,
+  never only in the picture.
+- CI guard: one invariant (file-resolves-on-disk + non-empty alt; here JA-179) scales to every
+  entry that later gains an image.
+- weight: source cards were 1024x1024 / ~2.3 MB each. Lazy-load keeps a single page cheap, but a
+  FULL set must be optimised first (downscale + WebP, target ~100-150 KB) or repo + page weight
+  balloon. Image production is the gating cost, not the code.
+- licensing: AI-generated art needs a provenance/licence note in NOTICES (commercial-use right
+  confirmed) — same discipline as the KanjiVG CC BY-SA attribution.
+
+### F.55.3 Local preview needs the production base path
+The SPA boots only under its production base (`…/JLPTSuccess/N5/`). Served from a localhost root
+(`http://localhost:PORT/`) the static shell loads but the router never populates `#app` (stuck on
+the skeleton) — a base-path assumption, not a code defect. To render-verify a UI change locally,
+either serve under the same path prefix, or verify the component with a static HTML harness (real
+`main.min.css` + the real asset + the exact emitted markup) and confirm the visual on the live
+deploy. Do NOT conclude "the app is broken" from a localhost-root skeleton.
