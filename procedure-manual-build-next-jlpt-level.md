@@ -13574,6 +13574,18 @@ NOT control what a human ultimately uploads to the external store. The operator 
 (re-upload the newest stamp after every fix) remains a manual hand-off and is the
 residual failure surface.
 
+### F.53.5 The auto-stamp must tolerate a locked old copy
+The "keep exactly one dated file" rule deletes the previous stamp on every rebuild. But the
+reviewer is often reading that previous file in Word when you regenerate, and Windows holds
+an exclusive lock on an open .docx - so `os.remove(prev)` raises PermissionError [WinError 32]
+and the WHOLE build aborts before it writes the new stamp. A deliverable builder must never
+fail to produce output because of a cleanup side-effect: wrap the old-copy removal in
+try/except, skip the locked file with a one-line warning, and continue. The repo then carries
+two dated copies for one cycle (harmless - the operator uploads the newest), and the stale one
+is cleaned up on the next rebuild once the reviewer has closed it. General rule: cleanup of a
+prior artifact is best-effort; producing the new artifact is mandatory - never let the former
+block the latter.
+
 ## Appendix F.54 — Auto-generated heuristic field encodes a generic default that is WRONG for a sub-class (kanji reading_rule / on-dominance) (added 2026-06-07)
 
 A native review of the N5 kanji pages found the `reading_rule` field — auto-generated on
