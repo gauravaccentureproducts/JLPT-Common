@@ -13573,3 +13573,44 @@ Auto-stamping guarantees the repo always offers exactly one current dated file; 
 NOT control what a human ultimately uploads to the external store. The operator step
 (re-upload the newest stamp after every fix) remains a manual hand-off and is the
 residual failure surface.
+
+## Appendix F.54 — Auto-generated heuristic field encodes a generic default that is WRONG for a sub-class (kanji reading_rule / on-dominance) (added 2026-06-07)
+
+A native review of the N5 kanji pages found the `reading_rule` field — auto-generated on
+~60 kanji from a generic template ("standalone kanji -> kun-yomi; compounds -> on-yomi. For
+X: standalone use of kun (K); compounds use on (O).") — was BACKWARDS for on-dominant kanji.
+It is the correct DEFAULT for content kanji (山 standalone = やま) but wrong for the numbers
+(二 standalone = に, not ふた) and on-loan kanji (語 = ご, 分 = ふん, 半 = はん, 天 = てん). The
+reviewer cited 11; the real class was larger.
+
+### F.54.1 Detection signal (do not fix per-citation)
+The reliable signal for "is the generic standalone=kun rule wrong here?" is: **primary_reading
+in on'yomi (script-normalised) AND not in kun'yomi**. on'yomi is stored in katakana (イチ) and
+primary_reading in hiragana (いち), so convert katakana -> hiragana (subtract 0x60 in the
+katakana block) before comparing. That query returned 17 candidates; native judgment removed 4
+false-positives where the kun standalone IS valid (年 とし, 先 さき, 会 会う, 新 新しい) —
+primary_reading was simply the chosen primary for a common on-compound. Net: 14 corrected.
+
+### F.54.2 The general lesson
+A template that bakes a "typical" linguistic rule into a per-item field is confidently WRONG
+for the minority sub-class it does not cover. When a heuristic field (reading_rule, register,
+default-reading, part-of-speech) is auto-stamped corpus-wide, audit the WHOLE field against an
+INDEPENDENT per-item signal — not just the reviewer's cited examples. Same shape as the vocab
+particle_examples template-artifact class (F.52): the generator pasted a frame without checking
+it against the entry's own data.
+
+### F.54.3 Render-faithful review packets surface the rest
+The same packet (build_kanji_review_docx.py — the kanji sibling of the vocab/grammar review
+builders; see F.53 for the auto-stamp/keep-one behaviour they share) surfaced one-off issues
+because it renders the data verbatim: an on-reading example that did not demonstrate the on-yomi
+(父親 ちちおや for 父's ふ -> 父母 ふぼ), malformed kanji+kana (手つだって -> てつだって),
+counter-before-core-meaning (本 -> "book"), surname-only example sentences that do not teach the
+kanji (田中 in 中 / 田 -> 箱の中に… / 田んぼに…), and fill-in-the-blank cloze items leaking into the
+example-sentence field (外, 私). Authoring rules: example SENTENCES must be complete (no cloze
+blanks); example WORDS lead with the kanji's core meaning; an "on-reading example" must actually
+contain that on-reading.
+
+### F.54.4 Bounded coverage
+The reading-rule correction covers "every on-dominant kanji detected by the primary_reading-in-
+on'yomi signal in this snapshot." No CI invariant locks reading-rule correctness — it is
+native-judgment prose, and the signal is a detection aid, not a guard.
