@@ -13763,3 +13763,130 @@ mirror stage (pure-Python generator; runs reliably even where the SPA won't boot
 the app header/footer, and verify a corrected value flushed through. Note that the mirror generator
 may render a DIFFERENT (often simpler) subset than the SPA - confirm which fields it emits before
 assuming an SPA-only issue (e.g. a candy/homophone row) even exists on the mirror.
+
+## Appendix F.58 - Deriving a learner-facing reference from a SEED corpus: verify completeness, label provenance, expect native passes to iterate (added 2026-06-09)
+
+A request to produce a learner-facing grammar reference (Pattern / Meaning / Usage / 3 examples
+per item) "from the existing corpus" exposed a chain of traps that apply to ANY Nx deliverable
+built on a level's data files. The corpus LOOKED authored; it was a seed.
+
+### F.58.1 "Exists" is not "authored" - verify field-level completeness before trusting a corpus
+A level's `data/*.json` can be a SEED: the catalogue (id, pattern, one gloss) is populated while
+the pedagogical fields (examples, form_rules, common_mistakes, explanation) are empty placeholders.
+The grammar seed in this case carried 128 patterns with `meaning_en` on all of them, but
+`examples: []` and empty `form_rules` on all 128, plus a SINGLE curated example per pattern living
+in a separate `KnowledgeBank/grammar_examples_*.md`. The `_meta.history` literally said "examples +
+form_rules to be authored." Before treating any corpus as a source for a deliverable, COUNT
+populated-vs-total per field (not file existence) and grep for placeholder markers ("(to be
+authored)", empty arrays); report the completeness matrix up front. Do not call a seed "audited" -
+if it never went through the Section 19 native pass, say so. (Related signal class: the file/field
+exists but is a template default - see F.52 / F.54.)
+
+### F.58.2 Fill gaps with model-generated content only under explicit provenance; keep the raw extract pristine
+When the deliverable needs fields the seed lacks, generating them is legitimate FOR A DRAFT, but:
+(a) provenance-tag every field at the line level - `[corpus]` (verbatim), `[corpus-fixed]` (corpus
+content corrected this pass), `[AI-gen]` (model-authored, not native-reviewed); (b) carry a
+disclaimer that AI-generated Japanese is machine-checked only and is not a substitute for native
+review; (c) apply corrections through an OVERRIDE layer in the builder, leaving the extracted corpus
+data unmodified, so the raw-vs-rendered distinction stays auditable. IMPORTANT boundary with F.56:
+provenance tags belong ONLY on an internal review/draft artifact whose audience is the owner/author.
+They must NEVER appear on the learner-facing product.
+
+### F.58.3 The seed's OWN content needs the same audit as new content
+A native pass found defects in the seed itself, not only in the generated fill: an example that did
+not demonstrate its pattern (the `くする` i-adjective pattern illustrated with `へやを きれいに します`,
+which is actually `na-adj + にする`); loose or wrong glosses (`または` glossed "both"; `つづける`
+glossed "keen on"); and an awkward grammar combination modeled as canonical (`ようだ` shown as
+`ふりそうな ようです`, stacking `そう` + `よう`). Treat a seed's curated examples as UNREVIEWED until a
+native pass clears them, and audit them with the Section 19 playbook exactly like freshly authored
+content - the same defect classes F.54.3 lists for kanji example words apply to grammar examples.
+
+### F.58.4 Native passes iterate - state bounded coverage, never "done"
+Two native review passes each surfaced a NEW item the previous automated checks had not (pass 1: a
+batch; pass 2: one more malformed hybrid the pass-1 token list had not anticipated - see F.59.3).
+Automated scans can cover the MECHANICAL classes (kanji-scope, malformed-hybrid); naturalness,
+pedagogy, and gloss accuracy need human judgment and tend to reveal a fresh item per pass. Per the
+Rule-4 writing discipline, report "all KNOWN issues fixed; class X clean against the snapshot
+scanned," not "done." The fastest path to true closure is ONE full native sweep of every item, not
+iterative spot-checks - offer that explicitly rather than implying a spot-checked draft is final.
+
+## Appendix F.59 - Kanji-scope bounding creates malformed kanji+kana hybrids that a character-whitelist scan cannot catch (added 2026-06-09)
+
+This promotes the one-off already noted in F.54.3 (`手つだって` -> `てつだって`) into a STANDING gate,
+because the same defect recurred across a 128-pattern x 3-example deliverable and a per-character
+kanji-whitelist scan reported it clean.
+
+### F.59.1 The anti-pattern and the rule
+To keep a word inside the level's kanji whitelist, the temptation is to replace ONLY the out-of-scope
+kanji of a multi-kanji word with its kana reading, leaving a kanji+kana hybrid: `問題`->`問だい`,
+`京都`->`京と`, `会議`->`会ぎ`, `試合`->`試あ`, `間違い`->`間ちがい`, `手伝う`->`手つだう`,
+`一度`->`一ど`, `何度`->`何ど`, `週末`->`週まつ`, `富士山`->`ふじ山`. These read as a broken /
+half-finished kanji conversion and a native reviewer flags each one. RULE: a word whose canonical
+form needs an out-of-whitelist kanji is written WHOLE in kana (`もんだい`, `きょうと`, `かいぎ`,
+`まちがい`) - never split mid-word. (If the deliverable is NOT whitelist-bound - e.g. a standalone
+reference rather than the site corpus - prefer the full correct kanji, optionally with furigana;
+decide the orthography policy per deliverable and apply it uniformly.)
+
+### F.59.2 Why a character-level whitelist scan passes the hybrid
+The retained kanji (問, 京, 会 ...) IS in the whitelist, so a scan that checks each kanji character
+against the allow-list reports 0 violations. The malformation lives at the WORD / orthography level,
+not the character level. A scope check and an orthography check are DIFFERENT checks; passing the
+first says nothing about the second.
+
+### F.59.3 Detect with a GENERAL boundary scan, not a curated bad-token list
+A curated list of known-bad hybrids only catches the cases you already enumerated. In this session a
+pass-1 list (`問だい`, `京と`, ...) cleared the doc, yet a native pass-2 found `間ちがい`, a hybrid the
+list had not anticipated. The reliable method: extract EVERY `(kanji-run)(immediately-following
+hiragana-run)` token from the RENDERED artifact, dedup, and review the full set - legitimate
+okurigana (`行きます`, `始める`, `高い`) sits alongside the malformed forms, and a human or a
+dictionary / morphological check separates them. Because the extractor surfaces ALL kanji->kana
+boundaries, an un-anticipated hybrid is surfaced for review rather than missed. Run it on every
+authored or generated Japanese surface (example sentences, usage notes, glosses, pattern names), not
+only the cited items - the same horizontal-deployment discipline as any fix batch.
+
+### F.59.4 Wiring + bounded claim
+Candidate CI invariant (JA-NN) for any level that authors Japanese: flag tokens of the form
+kanji-then-hiragana whose combined span is not in a maintained allow-list of legitimate okurigana
+verbs/adjectives; everything else is surfaced for review. Until that is wired, the general scan is a
+detection AID, not a guard - state coverage as "no malformed hybrid in the N tokens scanned for this
+snapshot," not "none exist." Pair it with the kanji-scope scan; the two are complementary (F.59.2),
+and neither alone is sufficient.
+
+## Appendix F.60 - The English gloss must cover every example shown; usage must license each example (added 2026-06-09)
+
+Multi-pass native review of the same 128-pattern x 3-example deliverable (see F.58, F.59) surfaced a third
+recurring class, distinct from the mechanical kana/kanji defects: SEMANTIC gloss-coverage drift. It recurred
+in opposite directions across consecutive rounds (an over-listing gloss in one pass, a too-narrow gloss in
+the next), so it is promoted to a standing review pass, not a one-off.
+
+### F.60.1 The anti-pattern and the rule
+A pattern entry carries one short English meaning plus 2-3 example sentences. The gloss tends to get written
+to fit example #1 (commonly the seed-corpus example), while examples #2-3 - often model-generated to add
+variety - exercise OTHER senses or functions of the same form. Two failure directions:
+- TOO NARROW: gloss `named; called ~` for casual `って`, while example #3 (`あした 雨が ふるって。`) used the
+  casual hearsay-quote sense ("I hear it'll rain tomorrow"). The learner cannot map example #3 to the meaning.
+- OVERREACH: a gloss lists senses (`reason for ...`) that none of the shown examples demonstrate (the
+  cleft-focus `のは～だ` case). The learner is told a sense the entry never illustrates.
+The rule: the gloss must be the UNION of exactly the senses the displayed examples exercise - no narrower
+(every example must be reachable from some clause of the gloss) and no broader (every gloss clause must be
+earned by at least one example). The usage line must likewise name the attachment + sense for each example,
+so each example is licensed - e.g. `N + って (= という/とは: called; as for) / plain form + って (= casual quote)`.
+
+### F.60.2 Detection: a meaning<->example reconciliation pass
+For each entry, map every example sentence to the gloss/usage clause that licenses it:
+- example with NO licensing clause  -> gloss is too narrow (extend it, OR swap the example for an on-sense one).
+- gloss clause with NO supporting example -> clause is unsupported (add an example, OR trim the clause).
+This is the semantic analogue of the seed-completeness pass (F.58) and the hybrid scan (F.59), but it is NOT
+mechanizable by character- or count-level gates: a kanji-scope scan and a "exactly 3 examples each" count
+both PASS a semantically-miscovered entry. It needs human (or sense-tagged) judgement per entry.
+
+### F.60.3 High-risk set, bounded claim, candidate invariant
+Highest risk: forms that are particles or sentence-enders with several grammatical FUNCTIONS, where one
+surface form spans naming / topic / quote / hearsay / cause / contrast - e.g. `って`, `と`, `し`, `から`,
+`のに`, `ば`/`たら`. Audit their gloss-coverage explicitly; single-function content words rarely drift.
+Report bounded: "gloss covers the senses exercised by the examples shown, for the M patterns reviewed,"
+never "gloss complete." Candidate review-time invariant (not fully automatable without sense tags): flag any
+entry whose gloss is a single short sense while one of its examples contains a quotation / hearsay / topic /
+contrast-marker variant of the form, and surface it for native review. Pair with F.58/F.59 - mechanical
+scans catch kana/kanji/count; this pass catches the meaning<->example mismatch; neither substitutes for the
+other.
