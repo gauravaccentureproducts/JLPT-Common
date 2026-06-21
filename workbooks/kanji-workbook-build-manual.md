@@ -146,7 +146,11 @@ of every kanji (readings, meaning, radical, examples) → layout montage of all 
 7. **Matching** not uniquely solvable.
 8. **Licence/attribution** for stroke-order data missing on the copyright page.
 9. **Extraction artifacts mistaken for defects** (common §8).
-10. Process: fixed one kanji but not its siblings; declared done with a check failing.
+10. **Review/exercise page omits some of the world's kanji** (tests a subset, not all) or is left badly
+    **underfilled** with a large void; **reference index clipped** (overflows one page — must paginate);
+    **trace glyphs / grid lines too faint for print**; **emoji used where the series uses the Bunpo-chan
+    mascot** (breaks uniformity). *(All four surfaced in the N4 v1 PDF audit — see §8.)*
+11. Process: fixed one kanji but not its siblings; declared done with a check failing.
 
 ---
 
@@ -165,6 +169,22 @@ The v0 open questions, resolved by *My N4 Kanji Adventure*:
 - **Data pipeline:** `_kanji_assemble.py` merges app `kanji.json` + KanjiVG + vocab → `_kanji_full.json`;
   a `_kanji_review_scan.py` (objective flags) + `_kanji_review_export.py` (DOCX/CSV/MD for reviewers)
   complete the loop. Render with **absolute paths** (relative paths break `_print2x`'s file URI).
+
+**Layout & print lessons (N4 v1 PDF-audit round):**
+- A per-world **review page must test EVERY kanji in that world** (not the first N) and **fill the page**
+  — expand the panel to `flex:1` and space the rows evenly; don't leave a void.
+- **Paginate the back-of-book index** — 143 entries clip a single 3-column page (silent `overflow:hidden`
+  loss); split into 2 pages.
+- **Fill an underused final card page** (e.g. the 11-kanji Summit's 5-card page) with a completion
+  callout in the empty grid slot rather than leaving a hole.
+- **Print darkness:** trace glyphs + writing-grid lines that look right on screen are **too faint on
+  paper** — darken (trace ~`.28` alpha, grid ~`.34`) and verify on a rendered raster, not the HTML.
+
+**Design uniformity (do it from build #1, not as a retrofit):** every type-edition MUST share the series
+identity — **port `SVG_DEFS` (the Bunpo-chan base64 mascot from `mascot_assets/`) + washi tape + the
+"notebook" cover + the opener mascot speech-bubble callout** from the grammar/vocab master. **Never ship
+emoji placeholders** for the mascot: a v1 that renders but uses emoji is *not* series-uniform — the N4
+kanji v1 needed a full mascot/cover/opener retrofit, avoidable by porting the shared layer upfront.
 
 ---
 

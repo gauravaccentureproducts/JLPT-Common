@@ -111,6 +111,16 @@ generous `virtual-time-budget`. `fallback_task_provider`/SmartScreen lines in st
 - **Mascot art** is embedded as **base64** in the HTML (so the file is self-contained for Edge);
   source PNGs live in `mascot_assets/`. Keep raster art ≤ ~800 px native — the 2× render already
   doubles it; oversized embeds make Edge's print pass time out.
+- **Series uniformity is mandatory from build #1 — not a retrofit.** Every type-edition (grammar /
+  vocab / kanji) ports the SAME charm layer: `SVG_DEFS` (the base64 Bunpo-chan mascot from
+  `mascot_assets/`), washi tape, the "notebook" cover, and the opener mascot speech-bubble callout.
+  **Never ship emoji placeholders** for the mascot — a v1 that renders but uses emoji is *not*
+  series-uniform. (The N4 kanji v1 shipped with emoji and needed a full mascot/cover/opener retrofit;
+  port the shared layer upfront instead.)
+- **Print darkness:** trace glyphs and guide-grid lines tuned to look right *on screen* are **too faint
+  on paper**. Darken them (trace ~`.28` alpha, grid lines ~`.34`) and confirm on a **rendered raster**,
+  not the HTML. Likewise, a review/exercise page must test **every** item in its section (not a subset)
+  and **fill** the page; paginate any reference index that would overflow a single page.
 
 ---
 
