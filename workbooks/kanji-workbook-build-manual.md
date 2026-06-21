@@ -4,11 +4,10 @@ How to build the **kanji** edition for any level (N5 → N1). Read
 **`00-common-workbook-pipeline.md`** first (shared 6"×9" KDP pipeline, render, openers, typography,
 extraction-artifact discipline, QA, environment). This manual covers what is **kanji-specific**.
 
-> ⚠️ **No kanji edition has shipped yet.** This manual extrapolates the *proven* shared infrastructure
-> (which transfers directly) plus standard kanji-workbook pedagogy. Treat the content-model and asset
-> sections as a v0 to validate on the first build; promote a parameter to a constant only once a real
-> edition confirms it. The grammar and vocabulary editions are the proven references for everything
-> shared.
+> ✅ **Build #1 shipped: *My N4 Kanji Adventure* (143 kanji, 12 worlds, 53 pages, 2026-06).** Values it
+> confirmed are tagged **[v1-confirmed]** below, and the v0 open questions (§8) are now resolved. The
+> data + assets came entirely from the existing N4 app (no network). The grammar and vocabulary editions
+> remain the references for shared mechanics.
 
 ---
 
@@ -38,9 +37,10 @@ okurigana shown after `・` or a dot) · **English keyword(s)** · **radical + c
 count** · a **stroke-order diagram** (numbered) · **2–3 example compounds** (word + reading + EN) · a
 **writing-practice grid**.
 
-**Density:** kanji cards are far richer than vocab cards (stroke diagram + practice grid), so plan
-**1–2 kanji per page** (e.g. info block on top, a full practice row beneath), not a 6-up grid. Expect
-more pages per word than vocab — size the per-page packing to land a sensible page count for the level.
+**Density [v1-confirmed]: 6 kanji per 6×9 page (2×3).** Build #1 first tried 4/page and each card had a
+large empty middle; the fix was to let the **writing-practice grid fill the card body**
+(`justify-content:space-evenly` over multiple rows) and pack 6/page. A kanji book is mostly writing
+practice — don't leave a void. (143 kanji → 53 pages incl. front/back matter.)
 
 **Reading discipline (kanji's #1 risk, mirrors vocab readings):** on'yomi in **katakana**, kun'yomi in
 **hiragana**, okurigana split marked (`も.つ`, `あ.がる`). Show only the level-relevant readings; a kanji
@@ -65,18 +65,20 @@ don't dominate the printed page. Verify the grid doesn't overflow the page botto
 
 ## 3. Stroke-order diagrams — the main new production task
 
-This is the genuinely new asset (vocab/grammar had only the mascot raster). Options, best first:
-- **KanjiVG** (`kanjivg` project, CC-BY-SA) — per-kanji SVGs with stroke paths in order; render each
-  with **numbered strokes** (number each `<path>` by its document order, place the index near the
-  stroke's start point). SVG ⇒ **vector, crisp at any DPI** and small. **Check the licence/attribution**
-  and add the required credit to the copyright page.
-- Generate the numbered diagram **at build time** from the SVG (a helper that reads the stroke paths and
-  emits a labelled SVG inline into the HTML) so it stays vector through the 600-DPI render.
-- Avoid font-glyph "stroke order" hacks and low-res raster diagrams — they look poor at print size.
+**[v1-confirmed] — KanjiVG gives three things for free; don't recompute any of them.** The level app
+already ships KanjiVG SVGs at `<lvl>/svg/kanji/<glyph>.svg` (CC-BY-SA — credit on the copyright page):
 
-**Gate stroke data:** the diagram's stroke count must equal the card's `strokes` field; mismatch = a
-data or asset error. Spot-check a sample of rendered diagrams visually (stroke numbering legible, no
-overlap with the kanji).
+- **The numbered diagram itself.** Each SVG already contains a `<g id="kvg:StrokeNumbers_…">` group of
+  positioned `<text>` numbers, so you **inline the SVG verbatim** and get a numbered, vector, any-DPI
+  diagram with **zero generation**. Only work: recolour the stroke paths (`stroke:#000000` → ink), size
+  to fit the card. Internal IDs are per-glyph hex (`kvg:0540c…`), so inlining 100+ causes no ID clashes.
+- **Stroke count** = `len(re.findall(r"<path[^>]*kvg:type", svg))` (one path per stroke) — derive it.
+- **Radical** = the `<g>` carrying a `kvg:radical` attribute → its `kvg:element` (prefer `tradit` →
+  `general` → `nelson`). E.g. 同 → 口.
+
+So the v0 "build a numbered-diagram helper" task evaporates — KanjiVG is pre-numbered. Spot-check one
+**high-stroke** page (11–13 strokes) to confirm legibility at print size. (No font-glyph or raster
+"stroke order" hacks — they look poor at print size.)
 
 ---
 
@@ -135,7 +137,10 @@ of every kanji (readings, meaning, radical, examples) → layout montage of all 
    wrong (も.つ).
 2. **Stroke count ≠ diagram**, or wrong **stroke order** in the asset.
 3. **Wrong radical / component** breakdown.
-4. **Example compound above level**, wrong reading, or doesn't actually use the headword kanji.
+4. **Circular example** — the "example word" is just the bare kanji (a kun-fallback where the kun has no
+   okurigana, e.g. 京→京, 心→心) — or a **missing example**; also a compound above level, wrong reading,
+   or one that doesn't use the kanji. *(Build #1's dominant finding: 30 circular + 8 missing; the review
+   scan flags `example.word == char`, fixed with hand-authored compounds — native-review those.)*
 5. **Writing grid** overflow / guide lines too heavy / traced glyph misaligned in the square.
 6. **Stroke-order numbering** illegible or overlapping the kanji at print size.
 7. **Matching** not uniquely solvable.
@@ -145,17 +150,21 @@ of every kanji (readings, meaning, radical, examples) → layout montage of all 
 
 ---
 
-## 8. Open questions to settle on the first kanji edition
+## 8. Build-#1 decisions [v1-confirmed]
 
-- Final **cards-per-page** and whether the stroke diagram sits inline on the card or in a dedicated
-  practice strip.
-- **Taxonomy axis** (radical-family vs theme) — theme aligns the series; radical teaches the system.
-- Stroke-order **source + licence** (KanjiVG vs alternative) and the build-time numbering helper.
-- How many **readings per kanji** to show at each level (curated vs comprehensive).
-- Whether to cross-link kanji ↔ the vocabulary edition (shared example words).
-
-Resolve these on build #1, then record the decisions here and promote the confirmed values into the
-per-level parameter table (common §10).
+The v0 open questions, resolved by *My N4 Kanji Adventure*:
+- **Cards-per-page: 6 (2×3).** Stroke diagram sits **inline on the card** (top-right); the writing grid
+  fills the card body (§1–2).
+- **Taxonomy axis: learning-order "journey" stages** for v1 — chunk `lesson_order`/`frequency_rank` into
+  ~12 named worlds. Radical-family / semantic-theme grouping is a richer v2 axis but needs more
+  authoring — deferred (§4).
+- **Stroke-order source: KanjiVG** from the app repo; diagrams are pre-numbered (§3); credit CC-BY-SA.
+- **Readings: the curated app `kanji.json` set** (on=katakana, kun=hiragana) — not a comprehensive dump.
+- **Cross-link kanji ↔ vocabulary: YES** — examples mined from the reviewed vocab (~94% at N4); the gap
+  filled with hand-authored compounds (native-review them) (§5).
+- **Data pipeline:** `_kanji_assemble.py` merges app `kanji.json` + KanjiVG + vocab → `_kanji_full.json`;
+  a `_kanji_review_scan.py` (objective flags) + `_kanji_review_export.py` (DOCX/CSV/MD for reviewers)
+  complete the loop. Render with **absolute paths** (relative paths break `_print2x`'s file URI).
 
 ---
 
