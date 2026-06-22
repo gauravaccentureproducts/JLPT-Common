@@ -186,6 +186,20 @@ identity — **port `SVG_DEFS` (the Bunpo-chan base64 mascot from `mascot_assets
 emoji placeholders** for the mascot: a v1 that renders but uses emoji is *not* series-uniform — the N4
 kanji v1 needed a full mascot/cover/opener retrofit, avoidable by porting the shared layer upfront.
 
+**Stroke-order teaching — the progressive build-up strip (build #2):** a single small numbered diagram is
+NOT enough (hard to follow on complex kanji). Teach 書き順 with a **progressive build-up strip** — one
+mini-glyph per stroke showing strokes 1..k cumulatively, the **new stroke k in an accent colour** (coral,
+bolder width) and earlier strokes grey — derived straight from KanjiVG's ordered stroke `<path>`s
+(`re.findall(r'<path[^>]*kvg:type="[^"]*"[^>]*\sd="([^"]+)"', svg)`). Use **≥26 px** boxes + a bold
+new-stroke so even an **18-stroke** kanji reads (it wraps to ~3 rows — verify the worst case fits, no
+clip). The strip needs room: drop to **4 cards/page** (the 6-up grid is too tight). It replaces the
+corner diagram.
+
+**Reading-token wrapping:** wrap each on/kun reading token (e.g. `あ(ける)`) in `white-space:nowrap` so a
+kana stem and its parenthesised okurigana never split when a multi-reading line wraps — the line then
+breaks only between tokens (at the `,` / `/` separators). *(A space the reviewer sees as `あ (ける)` may
+instead be a PDF-extraction artifact — confirm visually before "fixing".)*
+
 ---
 
 *Kanji-specific addendum to the common pipeline — extrapolated from the grammar/vocab editions and
